@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Revenue Sankey Preview</title>
+    <style>
+      :root {
+        --bg: #f4f7fb;
+        --card: #ffffff;
+        --border: #e7edf6;
+        --text: #0f172a;
+        --muted: #7b8aa0;
+        --flow: rgba(148, 163, 184, 0.58);
+        --flow-negative: rgba(251, 113, 133, 0.5);
+        --agg: #ec4899;
+        --net: #c026d3;
+        --negative: #fb7185;
+        --blue: #3b82f6;
+        --violet: #8b5cf6;
+        --pink: #ec4899;
+        --orange: #f97316;
+        --shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        padding: 32px;
+        font-family: Inter, "Segoe UI", Arial, sans-serif;
+        background:
+          radial-gradient(circle at top left, rgba(59, 130, 246, 0.08), transparent 28%),
+          linear-gradient(180deg, #f8fbff 0%, var(--bg) 100%);
+        color: var(--text);
+      }
+
+      .frame {
+        max-width: 1400px;
+        margin: 0 auto;
+        background: rgba(255, 255, 255, 0.8);
+        border: 1px solid rgba(226, 232, 240, 0.85);
+        border-radius: 32px;
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(12px);
+        overflow: hidden;
+      }
+
+      .header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 22px 24px 0;
+      }
+
+      .header h1 {
+        margin: 0;
+        font-size: 13px;
+        font-weight: 900;
+        text-transform: uppercase;
+        letter-spacing: 0.16em;
+        color: #50627e;
+      }
+
+      .header a {
+        color: var(--blue);
+        text-decoration: none;
+        font-weight: 800;
+        font-size: 22px;
+        line-height: 1;
+      }
+
+      .summary {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 14px;
+        padding: 18px 24px 6px;
+      }
+
+      .summary-card {
+        background: rgba(255, 255, 255, 0.92);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        padding: 14px 16px;
+        min-height: 84px;
+      }
+
+      .summary-card .label {
+        display: block;
+        font-size: 11px;
+        font-weight: 900;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      .summary-card .value {
+        display: block;
+        margin-top: 10px;
+        font-size: 26px;
+        line-height: 1.1;
+        font-weight: 900;
+        color: var(--text);
+      }
+
+      .summary-card.negative .value {
+        color: #dc2626;
+      }
+
+      .lanes {
+        display: grid;
+        grid-template-columns: 1.25fr 1.1fr 1fr 1.15fr;
+        gap: 16px;
+        padding: 8px 24px 0;
+      }
+
+      .lane-title {
+        font-size: 12px;
+        font-weight: 900;
+        text-transform: uppercase;
+        letter-spacing: 0.18em;
+        color: #6a7a92;
+      }
+
+      .chart-wrap {
+        position: relative;
+        padding: 6px 16px 20px;
+      }
+
+      svg {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+
+      .lane-marker {
+        rx: 8px;
+      }
+
+      .node-card {
+        fill: #ffffff;
+        stroke: #dbe5f1;
+        stroke-width: 1.25;
+        filter: drop-shadow(0 12px 22px rgba(15, 23, 42, 0.08));
+      }
+
+      .node-title {
+        font-size: 12px;
+        font-weight: 900;
+        fill: #0f172a;
+      }
+
+      .node-subtitle {
+        font-size: 10px;
+        font-weight: 700;
+        fill: #51637f;
+      }
+
+      .flow-main {
+        fill: none;
+        stroke: var(--flow);
+        stroke-linecap: round;
+      }
+
+      .flow-negative {
+        fill: none;
+        stroke: var(--flow-negative);
+        stroke-linecap: round;
+      }
+
+      .legend-note {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 0 24px 24px;
+        color: #697b95;
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .legend-note span {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        display: inline-block;
+      }
+
+      @media (max-width: 980px) {
+        body {
+          padding: 16px;
+        }
+
+        .summary {
+          grid-template-columns: 1fr;
+        }
+
+        .lanes {
+          grid-template-columns: repeat(4, minmax(120px, 1fr));
+          gap: 10px;
+          overflow-x: auto;
+          padding-bottom: 4px;
+        }
+
+        .chart-wrap {
+          padding: 6px 10px 18px;
+        }
+
+        .summary-card .value {
+          font-size: 22px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="frame">
+      <div class="header">
+        <h1>Revenue Flow Preview</h1>
+        <a href="#" aria-label="Open revenue trend page preview">&rarr;</a>
+      </div>
+
+      <div class="summary">
+        <div class="summary-card">
+          <span class="label">Positive Revenue</span>
+          <span class="value">IDR 545.20 Bn</span>
+        </div>
+        <div class="summary-card negative">
+          <span class="label">Negative Revenue</span>
+          <span class="value">IDR -165.70 Bn</span>
+        </div>
+        <div class="summary-card">
+          <span class="label">Net Revenue</span>
+          <span class="value">IDR 379.50 Bn</span>
+        </div>
+      </div>
+
+      <div class="lanes">
+        <div class="lane-title">Sources</div>
+        <div class="lane-title">Aggregation</div>
+        <div class="lane-title">Net Revenue</div>
+        <div class="lane-title">Negative Breakdown</div>
+      </div>
+
+      <div class="chart-wrap">
+        <svg viewBox="0 0 1200 430" role="img" aria-label="Revenue Sankey preview">
+          <path class="flow-main" d="M130 96 C220 96, 260 112, 330 122 C405 133, 450 146, 492 152" stroke-width="82"></path>
+          <path class="flow-main" d="M130 196 C220 196, 260 186, 330 177 C405 168, 450 160, 492 156" stroke-width="58"></path>
+          <path class="flow-main" d="M130 280 C220 280, 260 270, 330 258 C405 246, 450 230, 492 216" stroke-width="28"></path>
+          <path class="flow-main" d="M130 338 C220 338, 260 316, 330 290 C405 264, 450 244, 492 230" stroke-width="16"></path>
+
+          <path class="flow-main" d="M520 180 C610 180, 660 180, 738 180" stroke-width="120"></path>
+          <path class="flow-negative" d="M766 198 C850 206, 898 232, 952 252" stroke-width="58"></path>
+          <path class="flow-negative" d="M980 252 C1040 252, 1088 236, 1130 222" stroke-width="40"></path>
+          <path class="flow-negative" d="M980 252 C1040 252, 1088 286, 1130 300" stroke-width="18"></path>
+
+          <rect class="lane-marker" x="42" y="62" width="14" height="122" fill="var(--blue)"></rect>
+          <rect class="lane-marker" x="42" y="188" width="14" height="78" fill="var(--violet)"></rect>
+          <rect class="lane-marker" x="42" y="268" width="14" height="44" fill="var(--pink)"></rect>
+          <rect class="lane-marker" x="42" y="320" width="14" height="28" fill="var(--orange)"></rect>
+
+          <rect class="lane-marker" x="492" y="98" width="14" height="168" fill="var(--agg)"></rect>
+          <rect class="lane-marker" x="738" y="122" width="14" height="156" fill="var(--net)"></rect>
+          <rect class="lane-marker" x="952" y="226" width="14" height="72" fill="var(--negative)"></rect>
+
+          <rect class="node-card" x="70" y="76" width="180" height="54" rx="14"></rect>
+          <text class="node-title" x="88" y="100">Brokerage commission</text>
+          <text class="node-subtitle" x="88" y="118">IDR 250.40 Bn</text>
+
+          <rect class="node-card" x="70" y="176" width="190" height="54" rx="14"></rect>
+          <text class="node-title" x="88" y="200">Interest on Broker&apos;s Loans</text>
+          <text class="node-subtitle" x="88" y="218">IDR 180.20 Bn</text>
+
+          <rect class="node-card" x="70" y="255" width="142" height="54" rx="14"></rect>
+          <text class="node-title" x="88" y="279">IB Revenue</text>
+          <text class="node-subtitle" x="88" y="297">IDR 85.70 Bn</text>
+
+          <rect class="node-card" x="70" y="312" width="146" height="54" rx="14"></rect>
+          <text class="node-title" x="88" y="336">FI Sales Revenue</text>
+          <text class="node-subtitle" x="88" y="354">IDR 28.90 Bn</text>
+
+          <rect class="node-card" x="530" y="128" width="164" height="68" rx="16"></rect>
+          <text class="node-title" x="550" y="156">Total Revenue</text>
+          <text class="node-subtitle" x="550" y="176">IDR 545.20 Bn</text>
+
+          <rect class="node-card" x="766" y="134" width="170" height="68" rx="16"></rect>
+          <text class="node-title" x="786" y="162">Net Revenue</text>
+          <text class="node-subtitle" x="786" y="182">IDR 379.50 Bn</text>
+
+          <rect class="node-card" x="978" y="182" width="170" height="68" rx="16"></rect>
+          <text class="node-title" x="998" y="210">Negative</text>
+          <text class="node-subtitle" x="998" y="230">IDR -165.70 Bn</text>
+
+          <rect class="node-card" x="1042" y="186" width="120" height="52" rx="14" opacity="0"></rect>
+
+          <rect class="node-card" x="1126" y="194" width="64" height="44" rx="14"></rect>
+          <text class="node-title" x="1140" y="218">PI</text>
+          <text class="node-subtitle" x="1140" y="232">-120.50</text>
+
+          <rect class="node-card" x="1098" y="274" width="92" height="44" rx="14"></rect>
+          <text class="node-title" x="1112" y="298">Fund Sales</text>
+          <text class="node-subtitle" x="1112" y="312">-45.20</text>
+        </svg>
+      </div>
+
+      <div class="legend-note">
+        <span><i class="dot" style="background: rgba(148, 163, 184, 0.9)"></i>Main positive flow</span>
+        <span><i class="dot" style="background: rgba(251, 113, 133, 0.9)"></i>Negative outflow</span>
+      </div>
+    </div>
+  </body>
+</html>

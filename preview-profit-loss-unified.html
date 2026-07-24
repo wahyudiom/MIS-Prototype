@@ -1,0 +1,938 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Unified P&amp;L Prototype</title>
+  <style>
+    :root { --bg:#f4f7fb; --card:#fff; --border:#e5edf7; --text:#132238; --muted:#7d8ba3; --accent:#2563eb; --soft:#f8fbff; --good:#0f766e; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:"Segoe UI",sans-serif; background:linear-gradient(180deg,#f8fbff 0%,var(--bg) 100%); color:var(--text); }
+    .page { max-width:1480px; margin:0 auto; padding:28px; }
+    .header { display:flex; justify-content:space-between; align-items:flex-start; gap:24px; margin-bottom:24px; }
+    .title { margin:0; font-size:38px; font-weight:800; letter-spacing:-.03em; }
+    .subtitle { margin-top:8px; color:var(--muted); font-size:14px; font-weight:600; }
+    .action-bar { position:relative; display:flex; gap:12px; align-items:center; justify-content:flex-end; min-width:420px; }
+    .segmented { display:inline-flex; gap:6px; padding:6px; background:rgba(255,255,255,.7); border:1px solid var(--border); border-radius:18px; box-shadow:0 10px 30px rgba(15,23,42,.05); }
+    .tab { border:0; background:transparent; color:var(--muted); padding:11px 18px; border-radius:14px; font-size:14px; font-weight:700; cursor:pointer; }
+    .tab.active { background:#fff; color:var(--text); border:1px solid #dbe5f2; box-shadow:0 2px 8px rgba(15,23,42,.06); }
+    .filter-wrap { position:relative; }
+    .filter-btn { display:inline-flex; align-items:center; gap:10px; border:1px solid var(--border); background:#fff; color:var(--text); border-radius:16px; padding:12px 16px; font-size:13px; font-weight:800; box-shadow:0 10px 30px rgba(15,23,42,.05); cursor:pointer; }
+    .filter-btn:disabled { cursor:not-allowed; color:#a0aec0; background:#f8fafc; }
+    .filter-label { color:var(--muted); font-size:11px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; }
+    .filter-value { white-space:nowrap; }
+    .popover { position:absolute; top:calc(100% + 12px); right:0; width:340px; padding:16px; background:#fff; border:1px solid var(--border); border-radius:22px; box-shadow:0 24px 60px rgba(15,23,42,.16); z-index:50; }
+    .hidden { display:none !important; }
+    .pop-title { color:var(--muted); font-size:11px; font-weight:800; letter-spacing:.14em; text-transform:uppercase; margin-bottom:12px; }
+    .section + .section { margin-top:14px; }
+    .section-label { color:var(--muted); font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.14em; margin-bottom:8px; }
+    .chip-row { display:flex; gap:8px; flex-wrap:wrap; }
+    .chip { border:1px solid #dbe5f2; background:#fff; color:var(--text); border-radius:12px; padding:9px 12px; font-size:12px; font-weight:800; cursor:pointer; }
+    .chip.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+    .select-row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .select-block { background:var(--soft); border:1px solid #e7eef8; border-radius:16px; padding:10px; }
+    .select-block label { display:block; color:var(--muted); font-size:10px; font-weight:800; letter-spacing:.14em; text-transform:uppercase; margin-bottom:6px; }
+    .select-block select { width:100%; border:1px solid #dbe5f2; border-radius:12px; padding:10px 12px; background:#fff; color:var(--text); font-size:13px; font-weight:700; }
+    .hint { margin-top:10px; color:var(--good); font-size:12px; font-weight:800; }
+    .grid { display:grid; gap:22px; }
+    .kpis { grid-template-columns:repeat(4,minmax(0,1fr)); }
+    .kpis.three { grid-template-columns:repeat(3,minmax(0,1fr)); }
+    .card { background:var(--card); border:1px solid var(--border); border-radius:28px; box-shadow:0 14px 40px rgba(15,23,42,.06); }
+    .kpi { padding:24px; min-height:150px; display:flex; flex-direction:column; justify-content:space-between; }
+    .klabel { color:var(--muted); font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.12em; }
+    .kvalue { font-size:23px; font-weight:900; color:#0f172a; }
+    .kmeta { color:var(--muted); font-size:12px; font-weight:700; }
+    .row { display:grid; gap:22px; grid-template-columns:1fr; align-items:stretch; }
+    .row.single { grid-template-columns:1fr; }
+    .panel { padding:26px; min-height:370px; }
+    .phead { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:22px; }
+    .ptitle { margin:0; font-size:22px; font-weight:900; }
+    .ptag { color:var(--muted); font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.14em; }
+    .stage { height:265px; border-radius:24px; background:linear-gradient(180deg,rgba(241,245,249,.6) 0%,rgba(241,245,249,.14) 100%); border:1px solid #edf2f7; position:relative; overflow:hidden; padding:14px 16px 12px; display:flex; align-items:stretch; justify-content:stretch; }
+    .stage svg { width:100%; height:100%; display:block; }
+    .chart-grid { stroke:rgba(148,163,184,.18); stroke-width:1; }
+    .chart-axis { fill:#7d8ba3; font-size:11px; font-weight:800; letter-spacing:.04em; }
+    .chart-axis.y { text-anchor:end; }
+    .chart-axis.x { text-anchor:middle; }
+    .chart-legend { display:flex; gap:18px; align-items:center; flex-wrap:wrap; margin-top:16px; color:var(--muted); font-size:12px; font-weight:800; }
+    .legend-item { display:inline-flex; align-items:center; gap:8px; }
+    .legend-dot { width:10px; height:10px; border-radius:999px; }
+    .legend-line { width:14px; height:4px; border-radius:999px; }
+    .bar-label { fill:#132238; font-size:11px; font-weight:800; text-anchor:middle; }
+    .bar-value { fill:#7d8ba3; font-size:10px; font-weight:700; text-anchor:middle; }
+    .table { width:100%; border-collapse:collapse; font-size:14px; }
+    .table th,.table td { padding:18px 14px; border-bottom:1px solid #edf2f7; }
+    .table th { text-align:left; color:var(--muted); font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.12em; }
+    .table td.r,.table th.r { text-align:right; }
+    .table tfoot td { font-weight:900; background:#f8fafc; }
+    .note { margin-top:18px; color:var(--muted); font-size:13px; font-weight:600; }
+    @media(max-width:1100px){.action-bar{min-width:0}.kpis,.row{grid-template-columns:1fr 1fr}}
+    @media(max-width:800px){.page{padding:18px}.header{flex-direction:column}.action-bar{width:100%;justify-content:flex-start;min-width:0;flex-wrap:wrap}.kpis,.row{grid-template-columns:1fr}.popover{left:0;right:auto;width:min(100vw - 36px,340px)}}
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="header">
+      <div>
+        <h1 class="title">Profit &amp; Loss Performance</h1>
+        <div class="subtitle" id="subtitle"></div>
+      </div>
+      <div class="action-bar">
+        <div class="segmented">
+          <button class="tab active" data-mode="monthly">Monthly</button>
+          <button class="tab" data-mode="quarterly">Quarterly</button>
+          <button class="tab" data-mode="annual">Annual</button>
+        </div>
+        <div class="filter-wrap" id="filterWrap">
+          <button class="filter-btn" id="filterBtn">
+            <div>
+              <div class="filter-label">Filter</div>
+              <div class="filter-value" id="filterBadge"></div>
+            </div>
+            <span id="filterCaret">▼</span>
+          </button>
+          <div class="popover hidden" id="filterPopover">
+            <div class="pop-title">Time Filter</div>
+            <div class="section">
+              <div class="section-label">Statement Year</div>
+              <div class="chip-row" id="yearChips"></div>
+            </div>
+            <div class="section" id="presetSection">
+              <div class="section-label">Preset</div>
+              <div class="chip-row" id="presetChips"></div>
+            </div>
+            <div class="section hidden" id="customSection">
+              <div class="section-label">Custom Range</div>
+              <div class="select-row">
+                <div class="select-block">
+                  <label for="fromSelect">From</label>
+                  <select id="fromSelect"></select>
+                </div>
+                <div class="select-block">
+                  <label for="toSelect">To</label>
+                  <select id="toSelect"></select>
+                </div>
+              </div>
+              <div class="hint" id="rangeHint"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid kpis" id="kpis">
+      <div class="card kpi"><div class="klabel" id="k1"></div><div class="kvalue" id="k1v"></div></div>
+      <div class="card kpi"><div class="klabel" id="k2"></div><div class="kvalue" id="k2v"></div></div>
+      <div class="card kpi"><div class="klabel" id="k3"></div><div class="kvalue" id="k3v"></div></div>
+      <div class="card kpi" id="achKpi"><div class="klabel">Avg Achievement</div><div class="kvalue" id="achValue"></div></div>
+    </div>
+
+    <div class="grid row" style="margin-top:22px">
+      <div class="card panel">
+        <div class="phead"><h2 class="ptitle" id="trendTitle"></h2><div class="ptag" id="trendTag"></div></div>
+        <div class="stage" id="trendStage"></div>
+        <div class="chart-legend">
+          <span class="legend-item"><span class="legend-dot" style="background:#3b82f6"></span>Revenue</span>
+          <span class="legend-item"><span class="legend-dot" style="background:#fb923c"></span>Expense</span>
+          <span class="legend-item"><span class="legend-dot" style="background:#14b8a6"></span>Income Before Tax</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid row" id="bottom" style="margin-top:22px">
+      <div class="card panel" id="achPanel">
+        <div class="phead"><h2 class="ptitle">Achievement Trend (%)</h2></div>
+        <div class="stage" id="achievementStage"></div>
+        <div class="chart-legend">
+          <span class="legend-item"><span class="legend-line" style="background:#78b7dd"></span>Achievement</span>
+          <span class="legend-item"><span class="legend-dot" style="background:#ff7a1a"></span>Actual</span>
+          <span class="legend-item"><span class="legend-dot" style="background:#fde1c7"></span>Target</span>
+        </div>
+      </div>
+      <div class="card panel">
+        <div class="phead"><h2 class="ptitle" id="tableTitle"></h2><div class="ptag" id="tableTag"></div></div>
+        <table class="table"><thead id="thead"></thead><tbody id="tbody"></tbody><tfoot id="tfoot"></tfoot></table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const config = {
+      monthly: {
+        unit: 'month',
+        labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+        availableByYear: { 2023: 12, 2024: 12, 2025: 12, 2026: 9 },
+        presetOrder: ['full', 'custom'],
+        trendTitle: 'P/L Monthly Trend',
+        compareTitle: 'Monthly Financial Comparison',
+        tableTitle: 'Monthly Performance Summary',
+        tableTag: 'Months in selected year',
+        showAchievement: false
+      },
+      quarterly: {
+        unit: 'quarter',
+        labels: ['Q1', 'Q2', 'Q3', 'Q4'],
+        availableByYear: { 2023: 4, 2024: 4, 2025: 4, 2026: 4 },
+        presetOrder: ['full', 'custom'],
+        trendTitle: 'P/L Quarterly Trend',
+        compareTitle: 'Quarterly Financial Comparison',
+        tableTitle: 'Quarter Performance Summary',
+        tableTag: 'Quarter sequence in selected year',
+        showAchievement: false
+      },
+      annual: {
+        trendTitle: 'P/L Annual Trend',
+        compareTitle: 'Yearly Financial Comparison',
+        tableTitle: 'Year Performance Summary',
+        tableTag: 'Newest year first',
+        showAchievement: true,
+        cols: ['Period', 'Revenue', 'Expense', 'Income Before Tax', 'Target', 'Achievement']
+      }
+    };
+
+    const annualYears = [2021, 2022, 2023, 2024, 2025, 2026];
+    const state = {
+      mode: 'monthly',
+      popoverOpen: false,
+      monthly: { year: 2026, preset: 'custom', from: 0, to: 8 },
+      quarterly: { year: 2026, preset: 'full', from: 0, to: 3 },
+      annual: { selectedYears: [...annualYears] }
+    };
+
+    const presetText = { full: 'Full year', custom: 'Custom' };
+    const years = [2023, 2024, 2025, 2026];
+    const $ = (selector) => document.querySelector(selector);
+    const $$ = (selector) => document.querySelectorAll(selector);
+
+    function modeState(mode) { return state[mode]; }
+    function availableCount(mode) { return config[mode].availableByYear[modeState(mode).year]; }
+    function defaultRange(mode) { return mode === 'quarterly' ? fullRange(mode) : { from: 0, to: availableCount(mode) - 1 }; }
+    function fullRange(mode) { return { from: 0, to: config[mode].labels.length - 1 }; }
+    function selectedCount(mode) { const current = modeState(mode); return (current.to - current.from) + 1; }
+    function formatBillions(value) { return `IDR ${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} B`; }
+    function formatPercent(value) { return `${value.toFixed(2)}%`; }
+
+    function clampRange(mode) {
+      const current = modeState(mode);
+      if (mode === 'quarterly') {
+        const full = fullRange(mode);
+        current.preset = 'full';
+        current.from = full.from;
+        current.to = full.to;
+        return;
+      }
+      const maxAvailable = availableCount(mode) - 1;
+      if (current.preset === 'custom') {
+        current.from = Math.min(current.from, maxAvailable);
+        current.to = Math.min(current.to, maxAvailable);
+      }
+      if (current.to < current.from) current.to = current.from;
+    }
+
+    function rangeLabel(mode) {
+      const cfg = config[mode];
+      const current = modeState(mode);
+      const from = cfg.labels[current.from];
+      const to = cfg.labels[current.to];
+      return from === to ? from : `${from}-${to}`;
+    }
+
+    function selectedAnnualYears() {
+      return state.annual.selectedYears.slice().sort((a, b) => a - b);
+    }
+
+    function isContiguous(yearsList) {
+      return yearsList.every((year, index) => index === 0 || year === yearsList[index - 1] + 1);
+    }
+
+    function annualSummaryLabel() {
+      const yearsList = selectedAnnualYears();
+      if (yearsList.length === 1) return String(yearsList[0]);
+      if (isContiguous(yearsList)) return `${yearsList[0]}-${yearsList[yearsList.length - 1]}`;
+      if (yearsList.length <= 3) return yearsList.join(', ');
+      return `${yearsList[0]}-${yearsList[yearsList.length - 1]} · ${yearsList.length}y`;
+    }
+
+    summaryBadge = function(mode) {
+      if (mode === 'annual') return annualSummaryLabel();
+      const current = modeState(mode);
+      if (mode === 'quarterly') return String(current.year);
+      return `${current.year} · ${rangeLabel(mode)}`;
+    };
+
+    subtitleText = function(mode) {
+      if (mode === 'annual') return config.annual.subtitle;
+      const count = selectedCount(mode);
+      return `Financial overview for selected ${count}-${config[mode].unit} range: ${summaryBadge(mode)}`;
+    };
+
+    kpiLabels = function(mode) {
+      if (mode === 'annual') return config.annual.kpis;
+      const count = selectedCount(mode);
+      return [`${count}-${config[mode].unit} Revenue`, `${count}-${config[mode].unit} Expense`, `${count}-${config[mode].unit} Income`];
+    }
+
+    function metricSeed(mode, year, index) {
+      if (mode === 'monthly') return (year - 2020) * 48 + (index + 1) * 24 + Math.round(Math.sin(index + year) * 9);
+      if (mode === 'quarterly') return (year - 2020) * 130 + (index + 1) * 66 + Math.round(Math.cos(index + year) * 14);
+      return (year - 2020) * 72 + ((year + index) % 3) * 11;
+    }
+
+    function generatePeriodMetric(mode, year, index, label) {
+      const seed = metricSeed(mode, year, index);
+      const revenueBase = mode === 'monthly' ? 135 : 310;
+      const revenue = revenueBase + seed;
+      const expenseRatio = 0.61 + (((year + index) % 4) * 0.02);
+      const expense = Number((revenue * expenseRatio).toFixed(2));
+      const income = Number((revenue - expense).toFixed(2));
+      return { period: label, revenue: Number(revenue.toFixed(2)), expense, income };
+    }
+
+    function generateAnnualDataset() {
+      return annualYears.map((year, index) => {
+        const seed = metricSeed('annual', year, index);
+        const revenue = Number((830 + seed).toFixed(2));
+        const expense = Number((revenue * (0.62 + ((year + 1) % 3) * 0.015)).toFixed(2));
+        const income = Number((revenue - expense).toFixed(2));
+        const target = Number((income / (0.46 + index * 0.045 + ((year % 2) * 0.015))).toFixed(2));
+        const actual = income;
+        const achievement = Number(((actual / target) * 100).toFixed(2));
+        return { year, period: String(year), revenue, expense, income, actual, target, achievement };
+      });
+    };
+
+    buildDataset = function(mode) {
+      if (mode === 'annual') return generateAnnualDataset();
+      const current = modeState(mode);
+      const cfg = config[mode];
+      const points = [];
+      for (let index = current.from; index <= current.to; index += 1) {
+        points.push(generatePeriodMetric(mode, current.year, index, cfg.labels[index]));
+      }
+      return points;
+    }
+
+    function buildRows(mode, dataset) {
+      if (mode === 'annual') {
+        return dataset.slice().sort((a, b) => b.year - a.year).map((item) => [
+          item.period,
+          formatBillions(item.revenue),
+          formatBillions(item.expense),
+          formatBillions(item.income),
+          formatBillions(item.target),
+          formatPercent(item.achievement)
+        ]);
+      }
+
+      const current = modeState(mode);
+      return dataset.slice().reverse().map((item) => [
+        `${item.period} ${current.year}`,
+        formatBillions(item.revenue),
+        formatBillions(item.expense),
+        formatBillions(item.income)
+      ]);
+    }
+
+    function buildTotals(mode, dataset) {
+      const totals = dataset.reduce((acc, item) => {
+        acc.revenue += item.revenue;
+        acc.expense += item.expense;
+        acc.income += item.income;
+        if (typeof item.target === 'number') acc.target += item.target;
+        if (typeof item.achievement === 'number') acc.achievement += item.achievement;
+        return acc;
+      }, { revenue: 0, expense: 0, income: 0, target: 0, achievement: 0 });
+      const count = dataset.length || 1;
+
+      if (mode === 'annual') {
+        return [
+          [
+            'Total',
+            formatBillions(totals.revenue),
+            formatBillions(totals.expense),
+            formatBillions(totals.income),
+            '',
+            ''
+          ],
+          [
+            'Average',
+            formatBillions(totals.revenue / count),
+            formatBillions(totals.expense / count),
+            formatBillions(totals.income / count),
+            formatBillions(totals.target / count),
+            formatPercent(totals.achievement / count)
+          ]
+        ];
+      }
+
+      return [
+        [
+          'Total',
+          formatBillions(totals.revenue),
+          formatBillions(totals.expense),
+          formatBillions(totals.income)
+        ],
+        [
+          'Average',
+          formatBillions(totals.revenue / count),
+          formatBillions(totals.expense / count),
+          formatBillions(totals.income / count)
+        ]
+      ];
+    }
+
+    function closePopover() {
+      state.popoverOpen = false;
+      $('#filterPopover').classList.add('hidden');
+    }
+
+    function openPopover() {
+      if (state.mode === 'annual') return;
+      state.popoverOpen = true;
+      $('#filterPopover').classList.remove('hidden');
+    }
+
+    function setMode(mode) {
+      state.mode = mode;
+      closePopover();
+      if (mode === 'monthly' || mode === 'quarterly') {
+        const current = modeState(mode);
+        const defaults = defaultRange(mode);
+        current.preset = mode === 'quarterly' ? 'full' : 'custom';
+        current.from = defaults.from;
+        current.to = defaults.to;
+      }
+      render();
+    }
+
+    function setYear(year) {
+      const mode = state.mode;
+      const current = modeState(mode);
+      current.year = year;
+      clampRange(mode);
+      render();
+    }
+
+    function setPreset(preset) {
+      const mode = state.mode;
+      const current = modeState(mode);
+      current.preset = preset;
+      if (preset === 'full') {
+        const next = fullRange(mode);
+        current.from = next.from;
+        current.to = next.to;
+      } else {
+        const next = defaultRange(mode);
+        current.from = next.from;
+        current.to = next.to;
+      }
+      render();
+    }
+
+    function populateSelect(selectId, options, selected) {
+      $(selectId).innerHTML = options.map((label, index) => `<option value="${index}" ${index === selected ? 'selected' : ''}>${label}</option>`).join('');
+    }
+
+    function renderPopover() {
+      const mode = state.mode;
+      $('#filterBtn').disabled = mode === 'annual';
+      $('#filterCaret').textContent = mode === 'annual' ? '—' : (state.popoverOpen ? '▲' : '▼');
+      $('#filterBadge').textContent = summaryBadge(mode);
+
+      if (mode === 'annual') {
+        closePopover();
+        $('#presetSection').classList.add('hidden');
+        $('#customSection').classList.add('hidden');
+        $('#yearChips').innerHTML = '';
+        return;
+      }
+
+      const cfg = config[mode];
+      const current = modeState(mode);
+      $('#yearChips').innerHTML = years.map((year) => `<button class="chip${year === current.year ? ' active' : ''}" data-year="${year}">${year}</button>`).join('');
+      if (mode === 'quarterly') {
+        const full = fullRange(mode);
+        current.preset = 'full';
+        current.from = full.from;
+        current.to = full.to;
+        $('#presetSection').classList.add('hidden');
+        $('#customSection').classList.add('hidden');
+        $('#presetChips').innerHTML = '';
+        return;
+      }
+
+      $('#presetSection').classList.remove('hidden');
+      $('#presetChips').innerHTML = cfg.presetOrder.map((preset) => `<button class="chip${current.preset === preset ? ' active' : ''}" data-preset="${preset}">${presetText[preset]}</button>`).join('');
+
+      const maxCustomIndex = availableCount(mode) - 1;
+      const customOptions = cfg.labels.filter((_, index) => index <= maxCustomIndex);
+      $('#customSection').classList.toggle('hidden', current.preset !== 'custom');
+
+      if (current.preset === 'custom') {
+        populateSelect('#fromSelect', customOptions, current.from);
+        populateSelect('#toSelect', customOptions, Math.min(current.to, maxCustomIndex));
+        const count = selectedCount(mode);
+        $('#rangeHint').textContent = `${cfg.labels[current.from]} to ${cfg.labels[current.to]} · ${count} ${cfg.unit}${count > 1 ? 's' : ''}`;
+      }
+    }
+
+    const CHART_WIDTH = 960;
+    const CHART_HEIGHT = 220;
+
+    function svgFrame(inner) {
+      return `
+        <svg viewBox="0 0 ${CHART_WIDTH} ${CHART_HEIGHT}" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+          <defs>
+            <linearGradient id="revFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="rgba(59,130,246,0.28)"></stop>
+              <stop offset="100%" stop-color="rgba(59,130,246,0.03)"></stop>
+            </linearGradient>
+            <linearGradient id="expFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="rgba(251,146,60,0.24)"></stop>
+              <stop offset="100%" stop-color="rgba(251,146,60,0.03)"></stop>
+            </linearGradient>
+            <linearGradient id="incFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="rgba(20,184,166,0.22)"></stop>
+              <stop offset="100%" stop-color="rgba(20,184,166,0.03)"></stop>
+            </linearGradient>
+          </defs>
+          ${inner}
+        </svg>
+      `;
+    }
+
+    function buildAreaPath(points, baseY) {
+      if (!points.length) return '';
+      const head = `M ${points[0].x} ${baseY} L ${points[0].x} ${points[0].y}`;
+      const body = points.slice(1).map((point) => `L ${point.x} ${point.y}`).join(' ');
+      const tail = `L ${points[points.length - 1].x} ${baseY} Z`;
+      return `${head} ${body} ${tail}`;
+    }
+
+    function buildLinePath(points) {
+      if (!points.length) return '';
+      return points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ');
+    }
+
+    function chartHorizontalSpan(width, chartLeft, chartRight, ratio = 0.02) {
+      const fullWidth = width - chartLeft - chartRight;
+      const inset = fullWidth * ratio;
+      return {
+        start: chartLeft + inset,
+        end: width - chartRight - inset
+      };
+    }
+
+    function renderTrendChart(dataset) {
+      const width = CHART_WIDTH;
+      const height = CHART_HEIGHT;
+      const chartLeft = 56;
+      const chartRight = 14;
+      const chartTop = 18;
+      const chartBottom = 30;
+      const chartHeight = height - chartTop - chartBottom;
+      const maxValue = Math.max(...dataset.flatMap((item) => [item.revenue, item.expense, item.income])) * 1.12;
+      const yScale = (value) => chartTop + chartHeight - (value / maxValue) * chartHeight;
+      const span = chartHorizontalSpan(width, chartLeft, chartRight, 0.01);
+      const xScale = (index) => dataset.length === 1
+        ? (span.start + span.end) / 2
+        : span.start + ((span.end - span.start) / (dataset.length - 1)) * index;
+      const gridValues = [0, 0.25, 0.5, 0.75, 1].map((step) => Number((maxValue * step).toFixed(2)));
+
+      const revenuePoints = dataset.map((item, index) => ({ x: xScale(index), y: yScale(item.revenue), label: item.period }));
+      const expensePoints = dataset.map((item, index) => ({ x: xScale(index), y: yScale(item.expense), label: item.period }));
+      const incomePoints = dataset.map((item, index) => ({ x: xScale(index), y: yScale(item.income), label: item.period }));
+
+      const grid = gridValues.map((value) => {
+        const y = yScale(value);
+        return `
+          <line class="chart-grid" x1="${chartLeft}" y1="${y}" x2="${width - chartRight}" y2="${y}"></line>
+          <text class="chart-axis y" x="${chartLeft - 8}" y="${y + 4}">${(value / 1000).toFixed(2)}T</text>
+        `;
+      }).join('');
+
+      const xLabels = dataset.map((item, index) => `<text class="chart-axis x" x="${xScale(index)}" y="${height - 6}">${item.period}</text>`).join('');
+      const pointsMarkup = (points, color) => points.map((point) => `<circle cx="${point.x}" cy="${point.y}" r="4" fill="${color}" stroke="#fff" stroke-width="2"></circle>`).join('');
+
+      return svgFrame(`
+        ${grid}
+        <path d="${buildAreaPath(revenuePoints, chartTop + chartHeight)}" fill="url(#revFill)"></path>
+        <path d="${buildAreaPath(expensePoints, chartTop + chartHeight)}" fill="url(#expFill)"></path>
+        <path d="${buildAreaPath(incomePoints, chartTop + chartHeight)}" fill="url(#incFill)"></path>
+        <path d="${buildLinePath(revenuePoints)}" fill="none" stroke="#3b82f6" stroke-width="3"></path>
+        <path d="${buildLinePath(expensePoints)}" fill="none" stroke="#fb923c" stroke-width="3"></path>
+        <path d="${buildLinePath(incomePoints)}" fill="none" stroke="#14b8a6" stroke-width="3"></path>
+        ${pointsMarkup(revenuePoints, '#3b82f6')}
+        ${pointsMarkup(expensePoints, '#fb923c')}
+        ${pointsMarkup(incomePoints, '#14b8a6')}
+        ${xLabels}
+      `);
+    }
+
+    function renderBarChart(dataset) {
+      const width = CHART_WIDTH;
+      const height = CHART_HEIGHT;
+      const chartLeft = 52;
+      const chartRight = 14;
+      const chartTop = 16;
+      const chartBottom = 30;
+      const chartHeight = height - chartTop - chartBottom;
+      const maxValue = Math.max(...dataset.flatMap((item) => [item.revenue, item.expense, item.income])) * 1.15;
+      const yScale = (value) => chartTop + chartHeight - (value / maxValue) * chartHeight;
+      const span = chartHorizontalSpan(width, chartLeft, chartRight, 0.02);
+      const groupWidth = (span.end - span.start) / dataset.length;
+      const barWidth = Math.min(22, groupWidth / 4.8);
+      const colors = [
+        { key: 'revenue', fill: '#3b82f6' },
+        { key: 'expense', fill: '#fb923c' },
+        { key: 'income', fill: '#14b8a6' }
+      ];
+
+      const grid = [0, 0.25, 0.5, 0.75, 1].map((step) => {
+        const value = maxValue * step;
+        const y = yScale(value);
+        return `
+          <line class="chart-grid" x1="${chartLeft}" y1="${y}" x2="${width - chartRight}" y2="${y}"></line>
+          <text class="chart-axis y" x="${chartLeft - 8}" y="${y + 4}">${(value / 1000).toFixed(2)}T</text>
+        `;
+      }).join('');
+
+      const bars = dataset.map((item, index) => {
+        const groupX = span.start + groupWidth * index + groupWidth / 2;
+        const rects = colors.map((series, seriesIndex) => {
+          const value = item[series.key];
+          const x = groupX + (seriesIndex - 1) * (barWidth + 6) - barWidth / 2;
+          const y = yScale(value);
+          const h = chartTop + chartHeight - y;
+          return `<rect x="${x}" y="${y}" width="${barWidth}" height="${h}" rx="8" fill="${series.fill}"></rect>`;
+        }).join('');
+        return `${rects}<text class="bar-label" x="${groupX}" y="${height - 8}">${item.period}</text>`;
+      }).join('');
+
+      return svgFrame(`${grid}${bars}`);
+    }
+
+    function renderAchievementChart(dataset) {
+      const width = CHART_WIDTH;
+      const height = CHART_HEIGHT;
+      const chartLeft = 52;
+      const chartRight = 58;
+      const chartTop = 20;
+      const chartBottom = 30;
+      const chartHeight = height - chartTop - chartBottom;
+      const achievementMax = Math.max(125, Math.ceil(Math.max(...dataset.map((item) => item.achievement)) / 25) * 25);
+      const amountMax = Math.ceil(Math.max(...dataset.flatMap((item) => [item.actual, item.target])) / 100) * 100;
+      const yPercent = (value) => chartTop + chartHeight - (value / achievementMax) * chartHeight;
+      const yAmount = (value) => chartTop + chartHeight - (value / amountMax) * chartHeight;
+      const span = chartHorizontalSpan(width, chartLeft, chartRight, 0.01);
+      const xScale = (index) => dataset.length === 1
+        ? (span.start + span.end) / 2
+        : span.start + ((span.end - span.start) / (dataset.length - 1)) * index;
+
+      const points = dataset.map((item, index) => ({ x: xScale(index), y: yPercent(item.achievement), label: item.period, value: item.achievement }));
+      const percentTicks = [0, 25, 50, 75, 100, 125].filter((value) => value <= achievementMax);
+      const amountTicks = [0, 0.25, 0.5, 0.75, 1].map((step) => amountMax * step);
+      const grid = percentTicks.map((value) => {
+        const y = yPercent(value);
+        return `
+          <line class="chart-grid" x1="${chartLeft}" y1="${y}" x2="${width - chartRight}" y2="${y}"></line>
+          <text class="chart-axis y" x="${chartLeft - 8}" y="${y + 4}">${value.toFixed(0)}%</text>
+        `;
+      }).join('');
+      const rightAxis = amountTicks.map((value) => {
+        const y = yAmount(value);
+        return `<text class="chart-axis" x="${width - chartRight + 8}" y="${y + 4}">${value.toFixed(0)}B</text>`;
+      }).join('');
+      const groupWidth = dataset.length === 1 ? 80 : Math.min(72, (span.end - span.start) / dataset.length * 0.42);
+      const barWidth = groupWidth / 2.6;
+      const bars = dataset.map((item, index) => {
+        const x = xScale(index);
+        const actualY = yAmount(item.actual);
+        const targetY = yAmount(item.target);
+        const baseY = chartTop + chartHeight;
+        return `
+          <rect x="${x - barWidth - 2}" y="${actualY}" width="${barWidth}" height="${baseY - actualY}" rx="2" fill="#ff7a1a"></rect>
+          <rect x="${x + 2}" y="${targetY}" width="${barWidth}" height="${baseY - targetY}" rx="2" fill="#fde1c7"></rect>
+        `;
+      }).join('');
+
+      const line = buildLinePath(points);
+      const dots = points.map((point) => `<g><circle cx="${point.x}" cy="${point.y}" r="3.5" fill="#fff" stroke="#78b7dd" stroke-width="2"></circle><text class="bar-value" x="${point.x}" y="${point.y - 10}">${point.value.toFixed(1)}%</text></g>`).join('');
+      const labels = points.map((point) => `<text class="chart-axis x" x="${point.x}" y="${height - 8}">${point.label}</text>`).join('');
+
+      return svgFrame(`${grid}${rightAxis}${bars}<path d="${line}" fill="none" stroke="#78b7dd" stroke-width="3"></path>${dots}${labels}`);
+    }
+
+    function renderTable(mode, rows, summaryRows) {
+      const columns = mode === 'annual' ? config.annual.cols : ['Period', 'Revenue', 'Expense', 'Income Before Tax'];
+      $('#thead').innerHTML = `<tr>${columns.map((label, index) => `<th class="${index === 0 ? '' : 'r'}">${label}</th>`).join('')}</tr>`;
+      $('#tbody').innerHTML = rows.map((row) => `<tr>${row.map((cell, index) => `<td class="${index === 0 ? '' : 'r'}">${cell}</td>`).join('')}</tr>`).join('');
+      $('#tfoot').innerHTML = summaryRows.map((summaryRow) => `<tr>${summaryRow.map((cell, index) => `<td class="${index === 0 ? '' : 'r'}">${cell}</td>`).join('')}</tr>`).join('');
+    }
+
+    function renderKpis(mode, summaryRows, dataset) {
+      const labels = kpiLabels(mode);
+      const totalRow = summaryRows[0];
+      $('#k1').textContent = labels[0];
+      $('#k2').textContent = labels[1];
+      $('#k3').textContent = labels[2];
+      $('#k1v').textContent = totalRow[1];
+      $('#k2v').textContent = totalRow[2];
+      $('#k3v').textContent = totalRow[3];
+      if (mode === 'annual') {
+        const avgAchievement = dataset.reduce((acc, item) => acc + item.achievement, 0) / dataset.length;
+        $('#achValue').textContent = formatPercent(avgAchievement);
+      }
+    }
+
+    function renderCharts(mode, dataset) {
+      $('#trendStage').innerHTML = renderTrendChart(dataset);
+      if (mode === 'annual') {
+        $('#achievementStage').innerHTML = renderAchievementChart(dataset);
+      }
+    }
+
+    function render() {
+      const mode = state.mode;
+      const dataset = buildDataset(mode);
+      const rows = buildRows(mode, dataset);
+      const summaryRows = buildTotals(mode, dataset);
+
+      $('#subtitle').textContent = subtitleText(mode);
+      $('#trendTitle').textContent = mode === 'annual' ? config.annual.trendTitle : config[mode].trendTitle;
+      $('#tableTitle').textContent = mode === 'annual' ? config.annual.tableTitle : config[mode].tableTitle;
+      $('#tableTag').textContent = mode === 'annual' ? config.annual.tableTag : config[mode].tableTag;
+      $('#trendTag').textContent = summaryBadge(mode);
+
+      $('#kpis').classList.toggle('three', mode !== 'annual');
+      $('#achKpi').classList.toggle('hidden', mode !== 'annual');
+      $('#achPanel').classList.toggle('hidden', mode !== 'annual');
+      $('#bottom').classList.toggle('single', mode !== 'annual');
+
+      renderKpis(mode, summaryRows, dataset);
+      renderTable(mode, rows, summaryRows);
+      renderCharts(mode, dataset);
+      renderPopover();
+      $$('.tab').forEach((button) => button.classList.toggle('active', button.dataset.mode === mode));
+    }
+
+    $$('.tab').forEach((button) => {
+      button.addEventListener('click', () => setMode(button.dataset.mode));
+    });
+
+    $('#filterBtn').addEventListener('click', () => {
+      if (state.popoverOpen) closePopover();
+      else openPopover();
+      renderPopover();
+    });
+
+    document.addEventListener('click', (event) => {
+      if (!state.popoverOpen) return;
+      if (!$('#filterWrap').contains(event.target)) closePopover();
+    });
+
+    $('#filterPopover').addEventListener('click', (event) => {
+      const yearChip = event.target.closest('[data-year]');
+      const presetChip = event.target.closest('[data-preset]');
+      if (yearChip) setYear(Number(yearChip.dataset.year));
+      if (presetChip) setPreset(presetChip.dataset.preset);
+    });
+
+    $('#fromSelect').addEventListener('change', (event) => {
+      const mode = state.mode;
+      const current = modeState(mode);
+      current.from = Number(event.target.value);
+      if (current.from > current.to) current.to = current.from;
+      render();
+    });
+
+    $('#toSelect').addEventListener('change', (event) => {
+      const mode = state.mode;
+      const current = modeState(mode);
+      current.to = Number(event.target.value);
+      if (current.to < current.from) current.to = current.from;
+      render();
+    });
+
+    function summaryBadge(mode) {
+      if (mode === 'annual') {
+        const yearsList = state.annual.selectedYears.slice().sort((a, b) => a - b);
+        if (yearsList.length === 1) return String(yearsList[0]);
+        const contiguous = yearsList.every((year, index) => index === 0 || year === yearsList[index - 1] + 1);
+        if (contiguous) return `${yearsList[0]}-${yearsList[yearsList.length - 1]}`;
+        if (yearsList.length <= 3) return yearsList.join(', ');
+        return `${yearsList[0]}-${yearsList[yearsList.length - 1]} (${yearsList.length}y)`;
+      }
+      const current = modeState(mode);
+      if (mode === 'quarterly') return String(current.year);
+      return `${current.year} · ${rangeLabel(mode)}`;
+    }
+
+    function subtitleText(mode) {
+      if (mode === 'annual') return `Financial overview for selected year(s): ${summaryBadge(mode)}`;
+      const count = selectedCount(mode);
+      return `Financial overview for selected ${count}-${config[mode].unit} range: ${summaryBadge(mode)}`;
+    }
+
+    function kpiLabels(mode) {
+      if (mode === 'annual') {
+        const count = state.annual.selectedYears.length;
+        return [`${count}-year Revenue`, `${count}-year Expense`, `${count}-year Income`];
+      }
+      const count = selectedCount(mode);
+      return [`${count}-${config[mode].unit} Revenue`, `${count}-${config[mode].unit} Expense`, `${count}-${config[mode].unit} Income`];
+    }
+
+    function buildDataset(mode) {
+      if (mode === 'annual') {
+        const selected = new Set(state.annual.selectedYears);
+        return generateAnnualDataset().filter((item) => selected.has(item.year));
+      }
+      const current = modeState(mode);
+      const cfg = config[mode];
+      const points = [];
+      for (let index = current.from; index <= current.to; index += 1) {
+        points.push(generatePeriodMetric(mode, current.year, index, cfg.labels[index]));
+      }
+      return points;
+    };
+
+    openPopover = function() {
+      state.popoverOpen = true;
+      $('#filterPopover').classList.remove('hidden');
+    };
+
+    setYear = function(year) {
+      const mode = state.mode;
+      if (mode === 'annual') {
+        const exists = state.annual.selectedYears.includes(year);
+        if (exists && state.annual.selectedYears.length === 1) return;
+        state.annual.selectedYears = exists
+          ? state.annual.selectedYears.filter((value) => value !== year)
+          : [...state.annual.selectedYears, year].sort((a, b) => a - b);
+        render();
+        return;
+      }
+
+      const current = modeState(mode);
+      current.year = year;
+      if (mode === 'quarterly') {
+        const full = fullRange(mode);
+        current.preset = 'full';
+        current.from = full.from;
+        current.to = full.to;
+      }
+      clampRange(mode);
+      render();
+    };
+
+    renderPopover = function() {
+      const mode = state.mode;
+      $('#filterBtn').disabled = false;
+      $('#filterCaret').textContent = state.popoverOpen ? '▲' : '▼';
+      $('#filterBadge').textContent = summaryBadge(mode);
+
+      if (mode === 'annual') {
+        $('#presetSection').classList.add('hidden');
+        $('#customSection').classList.add('hidden');
+        $('#yearChips').innerHTML = annualYears.map((year) => `<button class="chip${state.annual.selectedYears.includes(year) ? ' active' : ''}" data-year="${year}">${year}</button>`).join('');
+        return;
+      }
+
+      const cfg = config[mode];
+      const current = modeState(mode);
+      $('#yearChips').innerHTML = years.map((year) => `<button class="chip${year === current.year ? ' active' : ''}" data-year="${year}">${year}</button>`).join('');
+      if (mode === 'quarterly') {
+        const full = fullRange(mode);
+        current.preset = 'full';
+        current.from = full.from;
+        current.to = full.to;
+        $('#presetSection').classList.add('hidden');
+        $('#customSection').classList.add('hidden');
+        $('#presetChips').innerHTML = '';
+        return;
+      }
+
+      $('#presetSection').classList.remove('hidden');
+      $('#presetChips').innerHTML = cfg.presetOrder.map((preset) => `<button class="chip${current.preset === preset ? ' active' : ''}" data-preset="${preset}">${presetText[preset]}</button>`).join('');
+
+      const maxCustomIndex = availableCount(mode) - 1;
+      const customOptions = cfg.labels.filter((_, index) => index <= maxCustomIndex);
+      $('#customSection').classList.toggle('hidden', current.preset !== 'custom');
+
+      if (current.preset === 'custom') {
+        populateSelect('#fromSelect', customOptions, current.from);
+        populateSelect('#toSelect', customOptions, Math.min(current.to, maxCustomIndex));
+        const count = selectedCount(mode);
+        $('#rangeHint').textContent = `${cfg.labels[current.from]} to ${cfg.labels[current.to]} · ${count} ${cfg.unit}${count > 1 ? 's' : ''}`;
+      }
+    };
+
+    summaryBadge = function(mode) {
+      if (mode === 'annual') return annualSummaryLabel();
+      const current = modeState(mode);
+      if (mode === 'quarterly') return String(current.year);
+      return `${current.year} · ${rangeLabel(mode)}`;
+    };
+
+    subtitleText = function(mode) {
+      if (mode === 'annual') return `Financial overview for selected year(s): ${annualSummaryLabel()}`;
+      const count = selectedCount(mode);
+      return `Financial overview for selected ${count}-${config[mode].unit} range: ${summaryBadge(mode)}`;
+    };
+
+    kpiLabels = function(mode) {
+      if (mode === 'annual') {
+        const count = state.annual.selectedYears.length;
+        return [`${count}-year Revenue`, `${count}-year Expense`, `${count}-year Income`];
+      }
+      const count = selectedCount(mode);
+      return [`${count}-${config[mode].unit} Revenue`, `${count}-${config[mode].unit} Expense`, `${count}-${config[mode].unit} Income`];
+    };
+
+    renderPopover = function() {
+      const mode = state.mode;
+      $('#filterBtn').disabled = false;
+      $('#filterCaret').textContent = state.popoverOpen ? '▲' : '▼';
+      $('#filterBadge').textContent = summaryBadge(mode);
+
+      if (mode === 'annual') {
+        $('#presetSection').classList.add('hidden');
+        $('#customSection').classList.add('hidden');
+        $('#yearChips').innerHTML = annualYears.map((year) => `<button class="chip${state.annual.selectedYears.includes(year) ? ' active' : ''}" data-year="${year}">${year}</button>`).join('');
+        return;
+      }
+
+      const cfg = config[mode];
+      const current = modeState(mode);
+      $('#yearChips').innerHTML = years.map((year) => `<button class="chip${year === current.year ? ' active' : ''}" data-year="${year}">${year}</button>`).join('');
+      if (mode === 'quarterly') {
+        const full = fullRange(mode);
+        current.preset = 'full';
+        current.from = full.from;
+        current.to = full.to;
+        $('#presetSection').classList.add('hidden');
+        $('#customSection').classList.add('hidden');
+        $('#presetChips').innerHTML = '';
+        return;
+      }
+
+      $('#presetSection').classList.remove('hidden');
+      $('#presetChips').innerHTML = cfg.presetOrder.map((preset) => `<button class="chip${current.preset === preset ? ' active' : ''}" data-preset="${preset}">${presetText[preset]}</button>`).join('');
+
+      const maxCustomIndex = availableCount(mode) - 1;
+      const customOptions = cfg.labels.filter((_, index) => index <= maxCustomIndex);
+      $('#customSection').classList.toggle('hidden', current.preset !== 'custom');
+
+      if (current.preset === 'custom') {
+        populateSelect('#fromSelect', customOptions, current.from);
+        populateSelect('#toSelect', customOptions, Math.min(current.to, maxCustomIndex));
+        const count = selectedCount(mode);
+        $('#rangeHint').textContent = `${cfg.labels[current.from]} to ${cfg.labels[current.to]} · ${count} ${cfg.unit}${count > 1 ? 's' : ''}`;
+      }
+    };
+
+    render();
+  </script>
+</body>
+</html>

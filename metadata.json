@@ -1,0 +1,5 @@
+{
+  "name": "Remix: MIS Branch Performance Dashboard v2.5",
+  "description": "A comprehensive Management Information System (MIS) dashboard to track branch performance across various financial products and teams. It provides a high-level overview and detailed drill-down capabilities for in-depth analysis.",
+  "requestFramePermissions": []
+}

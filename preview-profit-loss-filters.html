@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Profit &amp; Loss Filter Prototype</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --card: #ffffff;
+      --border: #e2e8f0;
+      --text: #142338;
+      --muted: #7b8aa5;
+      --blue: #2563eb;
+      --green: #16a34a;
+      --shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(37, 99, 235, 0.10), transparent 30%),
+        linear-gradient(180deg, #f8fbff 0%, var(--bg) 100%);
+      color: var(--text);
+    }
+
+    .page {
+      max-width: 1380px;
+      margin: 0 auto;
+      padding: 28px;
+    }
+
+    .hero {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 24px;
+      margin-bottom: 24px;
+    }
+
+    .hero h1 {
+      margin: 0;
+      font-size: 38px;
+      line-height: 1;
+      letter-spacing: -0.04em;
+      font-weight: 900;
+    }
+
+    .hero p {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    .mode-switch {
+      display: inline-flex;
+      gap: 8px;
+      padding: 8px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      box-shadow: var(--shadow);
+    }
+
+    .mode-switch button {
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      padding: 12px 18px;
+      font-size: 14px;
+      font-weight: 800;
+      border-radius: 14px;
+      cursor: pointer;
+    }
+
+    .mode-switch button.active {
+      background: var(--blue);
+      color: #fff;
+      box-shadow: 0 10px 24px rgba(37, 99, 235, 0.22);
+    }
+
+    .grid {
+      display: grid;
+      gap: 22px;
+    }
+
+    .top-grid {
+      grid-template-columns: 1.3fr 1fr;
+      align-items: stretch;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 28px;
+      box-shadow: var(--shadow);
+    }
+
+    .filter-card,
+    .summary-card,
+    .layout-card {
+      padding: 28px;
+    }
+
+    .card-title {
+      margin: 0;
+      font-size: 24px;
+      font-weight: 900;
+      letter-spacing: -0.03em;
+    }
+
+    .card-subtitle {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .controls {
+      margin-top: 24px;
+      display: grid;
+      gap: 18px;
+    }
+
+    .control-row {
+      display: grid;
+      gap: 14px;
+      grid-template-columns: 190px 1fr;
+      align-items: start;
+    }
+
+    .control-label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      padding-top: 14px;
+    }
+
+    .select-shell,
+    .range-shell,
+    .chips-shell {
+      background: #f8fbff;
+      border: 1px solid #e8eef7;
+      border-radius: 20px;
+      padding: 14px;
+    }
+
+    .select-shell {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-weight: 800;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .year-list,
+    .chips-shell {
+      display: flex;
+      gap: 10px;
+      margin-top: 12px;
+      flex-wrap: wrap;
+    }
+
+    .year-list button,
+    .range-chip,
+    .month-chip,
+    .quarter-chip {
+      border: 1px solid #dbe5f2;
+      background: #fff;
+      color: var(--text);
+      border-radius: 14px;
+      padding: 10px 14px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .year-list button.active,
+    .range-chip.active,
+    .month-chip.active,
+    .quarter-chip.active {
+      background: var(--blue);
+      border-color: var(--blue);
+      color: #fff;
+      box-shadow: 0 8px 18px rgba(37, 99, 235, 0.18);
+    }
+
+    .month-grid,
+    .quarter-grid {
+      display: grid;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .month-grid {
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+    }
+
+    .quarter-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .month-chip.disabled,
+    .quarter-chip.disabled,
+    .range-chip.disabled,
+    .year-list button.disabled {
+      background: #f3f6fa;
+      color: #b3bfd1;
+      border-color: #edf2f7;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
+    .summary-card {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .summary-box {
+      background: linear-gradient(180deg, #f8fbff 0%, #f3f8ff 100%);
+      border: 1px solid #e4edf8;
+      border-radius: 22px;
+      padding: 18px;
+      margin-top: 18px;
+    }
+
+    .summary-label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+    }
+
+    .summary-value {
+      margin-top: 8px;
+      font-size: 20px;
+      font-weight: 900;
+      letter-spacing: -0.03em;
+    }
+
+    .summary-detail {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .layout-preview {
+      margin-top: 20px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+    }
+
+    .layout-item {
+      min-height: 112px;
+      border: 1px solid #e6edf7;
+      border-radius: 22px;
+      padding: 16px;
+      background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+    }
+
+    .layout-item.wide {
+      grid-column: span 2;
+    }
+
+    .layout-item.full {
+      grid-column: span 3;
+    }
+
+    .layout-name {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+    }
+
+    .layout-copy {
+      margin-top: 10px;
+      font-size: 15px;
+      font-weight: 800;
+      line-height: 1.35;
+    }
+
+    .note-list {
+      margin-top: 18px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .note {
+      background: #f8fbff;
+      border: 1px solid #e5edf8;
+      border-radius: 18px;
+      padding: 14px 16px;
+      color: #334155;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    @media (max-width: 1100px) {
+      .top-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .month-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 760px) {
+      .page {
+        padding: 18px;
+      }
+
+      .hero {
+        flex-direction: column;
+      }
+
+      .control-row {
+        grid-template-columns: 1fr;
+      }
+
+      .month-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .layout-preview {
+        grid-template-columns: 1fr;
+      }
+
+      .layout-item.wide,
+      .layout-item.full {
+        grid-column: span 1;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="hero">
+      <div>
+        <h1>Profit &amp; Loss Filter Prototype</h1>
+        <p>Suggested UX for Monthly and Quarterly so both pages stay simple, readable, and fast to build.</p>
+      </div>
+      <div class="mode-switch">
+        <button class="active" data-mode="monthly">Monthly</button>
+        <button data-mode="quarterly">Quarterly</button>
+      </div>
+    </div>
+
+    <div class="grid top-grid">
+      <div class="card filter-card">
+        <h2 class="card-title" id="filter-title">Monthly Filter</h2>
+        <div class="card-subtitle" id="filter-subtitle">Best function: Year + Month Range, with YTD as the default.</div>
+
+        <div class="controls" id="monthly-controls">
+          <div class="control-row">
+            <div class="control-label">Statement Year</div>
+            <div class="range-shell">
+              <div class="select-shell">
+                <span id="monthly-year-value">2026</span>
+                <span id="monthly-year-meta" style="color:#94a3b8;">Latest available</span>
+              </div>
+              <div class="year-list" id="monthly-year-list">
+                <button data-year="2023">2023</button>
+                <button data-year="2024">2024</button>
+                <button data-year="2025">2025</button>
+                <button data-year="2026">2026</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="control-row">
+            <div class="control-label">Quick Range</div>
+            <div class="chips-shell" id="monthly-presets">
+              <button class="range-chip" data-preset="ytd">YTD</button>
+              <button class="range-chip" data-preset="latest3">Latest 3M</button>
+              <button class="range-chip" data-preset="h1">H1</button>
+              <button class="range-chip" data-preset="full">Full Year</button>
+              <button class="range-chip" data-preset="custom">Custom</button>
+            </div>
+          </div>
+
+          <div class="control-row">
+            <div class="control-label">Month Range</div>
+            <div class="range-shell">
+              <div class="select-shell">
+                <span id="monthly-range-value">Jan 2026 to Sep 2026</span>
+                <span id="monthly-range-meta" style="color:#16a34a;">9 months selected</span>
+              </div>
+              <div class="month-grid" id="monthly-grid">
+                <button class="month-chip" data-index="0">Jan</button>
+                <button class="month-chip" data-index="1">Feb</button>
+                <button class="month-chip" data-index="2">Mar</button>
+                <button class="month-chip" data-index="3">Apr</button>
+                <button class="month-chip" data-index="4">May</button>
+                <button class="month-chip" data-index="5">Jun</button>
+                <button class="month-chip" data-index="6">Jul</button>
+                <button class="month-chip" data-index="7">Aug</button>
+                <button class="month-chip" data-index="8">Sep</button>
+                <button class="month-chip" data-index="9">Oct</button>
+                <button class="month-chip" data-index="10">Nov</button>
+                <button class="month-chip" data-index="11">Dec</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="controls" id="quarterly-controls" style="display:none;">
+          <div class="control-row">
+            <div class="control-label">Statement Year</div>
+            <div class="range-shell">
+              <div class="select-shell">
+                <span id="quarterly-year-value">2026</span>
+                <span id="quarterly-year-meta" style="color:#94a3b8;">Latest available</span>
+              </div>
+              <div class="year-list" id="quarterly-year-list">
+                <button data-year="2023">2023</button>
+                <button data-year="2024">2024</button>
+                <button data-year="2025">2025</button>
+                <button data-year="2026">2026</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="control-row">
+            <div class="control-label">Quick Range</div>
+            <div class="chips-shell" id="quarterly-presets">
+              <button class="range-chip" data-preset="ytd">YTD</button>
+              <button class="range-chip" data-preset="h1">H1</button>
+              <button class="range-chip" data-preset="full">Full Year</button>
+              <button class="range-chip" data-preset="custom">Custom</button>
+            </div>
+          </div>
+
+          <div class="control-row">
+            <div class="control-label">Quarter Range</div>
+            <div class="range-shell">
+              <div class="select-shell">
+                <span id="quarterly-range-value">Q1 2026 to Q3 2026</span>
+                <span id="quarterly-range-meta" style="color:#16a34a;">3 quarters selected</span>
+              </div>
+              <div class="quarter-grid" id="quarterly-grid">
+                <button class="quarter-chip" data-index="0">Q1</button>
+                <button class="quarter-chip" data-index="1">Q2</button>
+                <button class="quarter-chip" data-index="2">Q3</button>
+                <button class="quarter-chip" data-index="3">Q4</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card summary-card">
+        <div>
+          <h2 class="card-title">Why This Filter Works</h2>
+          <div class="card-subtitle" id="reason-title">Monthly users usually want YTD or a specific month span, not a rigid full-year view.</div>
+        </div>
+
+        <div class="summary-box">
+          <div class="summary-label">Current Selection</div>
+          <div class="summary-value" id="summary-default">2026 • Jan-Sep (YTD)</div>
+          <div class="summary-detail" id="summary-detail">Only months with data are selectable, so future months stay disabled.</div>
+        </div>
+
+        <div class="summary-box">
+          <div class="summary-label">Applied Data Scope</div>
+          <div class="summary-value" id="summary-rule">KPI, charts, and table use only selected months.</div>
+          <div class="summary-detail" id="summary-range-detail">9 months will feed KPI cards, charts, and the summary table.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card layout-card" style="margin-top:22px;">
+      <h2 class="card-title">Suggested Page Layout</h2>
+      <div class="card-subtitle" id="layout-subtitle">The filter should feel lightweight and not compete with the charts.</div>
+
+      <div class="layout-preview">
+        <div class="layout-item">
+          <div class="layout-name">Header</div>
+          <div class="layout-copy">Title and subtitle on the left, compact filter on the right.</div>
+        </div>
+        <div class="layout-item wide">
+          <div class="layout-name">Filter Strip</div>
+          <div class="layout-copy">One year selector plus one range selector keeps Monthly and Quarterly consistent.</div>
+        </div>
+        <div class="layout-item">
+          <div class="layout-name">KPIs</div>
+          <div class="layout-copy">Totals recalculate immediately using selected period only.</div>
+        </div>
+        <div class="layout-item wide">
+          <div class="layout-name">Trend Chart</div>
+          <div class="layout-copy">Only selected months or quarters appear on the x-axis.</div>
+        </div>
+        <div class="layout-item full">
+          <div class="layout-name">Summary Table</div>
+          <div class="layout-copy">Chronological rows for the chosen range. No hidden data outside the selection.</div>
+        </div>
+      </div>
+
+      <div class="note-list" id="note-list">
+        <div class="note">Use contiguous range behavior so selection stays simple: Jan-Mar, Jan-Jun, Mar-Aug, Q1-Q3.</div>
+        <div class="note">Disable future months or quarters automatically based on available data.</div>
+        <div class="note">Keep Monthly and Quarterly on the same filter pattern so users do not need to relearn the UI.</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const modes = {
+      monthly: {
+        title: 'Monthly Filter',
+        subtitle: 'Best function: Year + Month Range, with YTD as the default.',
+        reason: 'Monthly users usually want YTD or a specific month span, not a rigid full-year view.',
+        detail: 'Only months with data are selectable, so future months stay disabled.',
+        rule: 'KPI, charts, and table use only selected months.',
+        layout: 'The filter should feel lightweight and not compete with the charts.',
+        notes: [
+          'Use contiguous month range behavior so selection stays simple: Jan-Mar, Jan-Jun, Mar-Aug.',
+          'Disable future months automatically when data is not available yet.',
+          'Default should open in YTD mode because that is the fastest monthly read for management.'
+        ],
+        years: [2023, 2024, 2025, 2026],
+        availablePeriodsByYear: { 2023: 12, 2024: 12, 2025: 12, 2026: 9 },
+        labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+        periodUnitLabel: 'months'
+      },
+      quarterly: {
+        title: 'Quarterly Filter',
+        subtitle: 'Best function: Year + Quarter Range, with YTD as the default.',
+        reason: 'Quarterly users usually compare partial-year progress like Q1-Q2 or Q1-Q3 within one statement year.',
+        detail: 'Only available quarters are selectable, so incomplete future quarters stay disabled.',
+        rule: 'KPI, charts, and table use only selected quarters.',
+        layout: 'Quarterly should mirror Monthly so both subpages feel like one system.',
+        notes: [
+          'Use contiguous quarter range behavior: Q1-Q2, Q1-Q3, Q2-Q4.',
+          'Keep selection within one year to avoid confusing cross-year quarter logic.',
+          'Offer quick presets like YTD, H1, and Full Year for faster executive review.'
+        ],
+        years: [2023, 2024, 2025, 2026],
+        availablePeriodsByYear: { 2023: 4, 2024: 4, 2025: 4, 2026: 3 },
+        labels: ['Q1', 'Q2', 'Q3', 'Q4'],
+        periodUnitLabel: 'quarters'
+      }
+    };
+
+    const state = {
+      currentMode: 'monthly',
+      monthly: { year: 2026, preset: 'ytd', start: 0, end: 8, customAnchor: null },
+      quarterly: { year: 2026, preset: 'ytd', start: 0, end: 2, customAnchor: null }
+    };
+
+    const modeButtons = document.querySelectorAll('.mode-switch button');
+    const title = document.getElementById('filter-title');
+    const subtitle = document.getElementById('filter-subtitle');
+    const reasonTitle = document.getElementById('reason-title');
+    const summaryDefault = document.getElementById('summary-default');
+    const summaryDetail = document.getElementById('summary-detail');
+    const summaryRule = document.getElementById('summary-rule');
+    const summaryRangeDetail = document.getElementById('summary-range-detail');
+    const layoutSubtitle = document.getElementById('layout-subtitle');
+    const noteList = document.getElementById('note-list');
+    const monthlyControls = document.getElementById('monthly-controls');
+    const quarterlyControls = document.getElementById('quarterly-controls');
+
+    const monthlyYearValue = document.getElementById('monthly-year-value');
+    const monthlyYearMeta = document.getElementById('monthly-year-meta');
+    const monthlyRangeValue = document.getElementById('monthly-range-value');
+    const monthlyRangeMeta = document.getElementById('monthly-range-meta');
+    const quarterlyYearValue = document.getElementById('quarterly-year-value');
+    const quarterlyYearMeta = document.getElementById('quarterly-year-meta');
+    const quarterlyRangeValue = document.getElementById('quarterly-range-value');
+    const quarterlyRangeMeta = document.getElementById('quarterly-range-meta');
+
+    function getConfig(mode) {
+      return modes[mode];
+    }
+
+    function getState(mode) {
+      return state[mode];
+    }
+
+    function getAvailableCount(mode) {
+      const modeState = getState(mode);
+      return getConfig(mode).availablePeriodsByYear[modeState.year];
+    }
+
+    function getRangeForPreset(mode, preset) {
+      const availableCount = getAvailableCount(mode);
+
+      if (mode === 'monthly') {
+        if (preset === 'latest3') {
+          return { start: Math.max(0, availableCount - 3), end: availableCount - 1 };
+        }
+        if (preset === 'h1') {
+          return { start: 0, end: Math.min(5, availableCount - 1) };
+        }
+      }
+
+      if (mode === 'quarterly' && preset === 'h1') {
+        return { start: 0, end: Math.min(1, availableCount - 1) };
+      }
+
+      return { start: 0, end: availableCount - 1 };
+    }
+
+    function getPresetLabel(preset) {
+      return {
+        ytd: 'YTD',
+        latest3: 'Latest 3M',
+        h1: 'H1',
+        full: 'Full Year',
+        custom: 'Custom'
+      }[preset];
+    }
+
+    function getRangeLabel(mode) {
+      const config = getConfig(mode);
+      const modeState = getState(mode);
+      const startLabel = config.labels[modeState.start];
+      const endLabel = config.labels[modeState.end];
+      return startLabel === endLabel
+        ? `${startLabel} ${modeState.year}`
+        : `${startLabel} ${modeState.year} to ${endLabel} ${modeState.year}`;
+    }
+
+    function getSelectedCount(mode) {
+      const modeState = getState(mode);
+      return modeState.end - modeState.start + 1;
+    }
+
+    function getSelectionSummary(mode) {
+      const config = getConfig(mode);
+      const modeState = getState(mode);
+      const compactRange = modeState.start === modeState.end
+        ? config.labels[modeState.start]
+        : `${config.labels[modeState.start]}-${config.labels[modeState.end]}`;
+      return `${modeState.year} • ${compactRange} (${getPresetLabel(modeState.preset)})`;
+    }
+
+    function syncPreset(mode) {
+      const modeState = getState(mode);
+      const availableCount = getAvailableCount(mode);
+      const presetChecks = mode === 'monthly'
+        ? [
+            ['ytd', { start: 0, end: availableCount - 1 }],
+            ['latest3', { start: Math.max(0, availableCount - 3), end: availableCount - 1 }],
+            ['h1', { start: 0, end: Math.min(5, availableCount - 1) }],
+            ['full', { start: 0, end: availableCount - 1 }]
+          ]
+        : [
+            ['ytd', { start: 0, end: availableCount - 1 }],
+            ['h1', { start: 0, end: Math.min(1, availableCount - 1) }],
+            ['full', { start: 0, end: availableCount - 1 }]
+          ];
+
+      const matchedPreset = presetChecks.find((entry) => {
+        const range = entry[1];
+        return range.start === modeState.start && range.end === modeState.end;
+      });
+
+      modeState.preset = matchedPreset ? matchedPreset[0] : 'custom';
+    }
+
+    function setYear(mode, year) {
+      const modeState = getState(mode);
+      modeState.year = year;
+      modeState.customAnchor = null;
+      const nextRange = getRangeForPreset(mode, 'ytd');
+      modeState.preset = 'ytd';
+      modeState.start = nextRange.start;
+      modeState.end = nextRange.end;
+      render(mode);
+    }
+
+    function applyPreset(mode, preset) {
+      const config = getConfig(mode);
+      const availableCount = getAvailableCount(mode);
+      const modeState = getState(mode);
+
+      if (preset === 'full' && availableCount < config.labels.length) {
+        return;
+      }
+
+      if (preset === 'custom') {
+        modeState.preset = 'custom';
+        modeState.customAnchor = modeState.start;
+      } else {
+        const nextRange = getRangeForPreset(mode, preset);
+        modeState.preset = preset;
+        modeState.start = nextRange.start;
+        modeState.end = nextRange.end;
+        modeState.customAnchor = null;
+      }
+
+      render(mode);
+    }
+
+    function applyCustomClick(mode, index) {
+      const availableCount = getAvailableCount(mode);
+      if (index >= availableCount) {
+        return;
+      }
+
+      const modeState = getState(mode);
+      modeState.preset = 'custom';
+
+      if (modeState.customAnchor === null) {
+        modeState.customAnchor = index;
+        modeState.start = index;
+        modeState.end = index;
+      } else {
+        modeState.start = Math.min(modeState.customAnchor, index);
+        modeState.end = Math.max(modeState.customAnchor, index);
+        modeState.customAnchor = null;
+      }
+
+      syncPreset(mode);
+      render(mode);
+    }
+
+    function renderModeControls(mode) {
+      const config = getConfig(mode);
+      const modeState = getState(mode);
+      const availableCount = getAvailableCount(mode);
+      const yearValue = mode === 'monthly' ? monthlyYearValue : quarterlyYearValue;
+      const yearMeta = mode === 'monthly' ? monthlyYearMeta : quarterlyYearMeta;
+      const rangeValue = mode === 'monthly' ? monthlyRangeValue : quarterlyRangeValue;
+      const rangeMeta = mode === 'monthly' ? monthlyRangeMeta : quarterlyRangeMeta;
+      const yearButtons = document.querySelectorAll(`#${mode}-year-list button`);
+      const presetButtons = document.querySelectorAll(`#${mode}-presets .range-chip`);
+      const periodButtons = document.querySelectorAll(`#${mode}-grid button`);
+
+      yearValue.textContent = modeState.year;
+      yearMeta.textContent = availableCount === config.labels.length
+        ? 'Full-year data available'
+        : `${availableCount} ${config.periodUnitLabel} available`;
+      rangeValue.textContent = getRangeLabel(mode);
+      rangeMeta.textContent = `${getSelectedCount(mode)} ${config.periodUnitLabel} selected`;
+
+      yearButtons.forEach((button) => {
+        button.classList.toggle('active', Number(button.dataset.year) === modeState.year);
+      });
+
+      presetButtons.forEach((button) => {
+        const disableFull = button.dataset.preset === 'full' && availableCount < config.labels.length;
+        button.classList.toggle('active', button.dataset.preset === modeState.preset);
+        button.classList.toggle('disabled', disableFull);
+      });
+
+      periodButtons.forEach((button) => {
+        const index = Number(button.dataset.index);
+        const isAvailable = index < availableCount;
+        const isSelected = isAvailable && index >= modeState.start && index <= modeState.end;
+        button.classList.toggle('disabled', !isAvailable);
+        button.classList.toggle('active', isSelected);
+      });
+    }
+
+    function render(mode) {
+      state.currentMode = mode;
+      const config = getConfig(mode);
+      title.textContent = config.title;
+      subtitle.textContent = config.subtitle;
+      reasonTitle.textContent = config.reason;
+      summaryDefault.textContent = getSelectionSummary(mode);
+      summaryDetail.textContent = config.detail;
+      summaryRule.textContent = config.rule;
+      summaryRangeDetail.textContent = `${getSelectedCount(mode)} ${config.periodUnitLabel} will feed KPI cards, charts, and the summary table.`;
+      layoutSubtitle.textContent = config.layout;
+      noteList.innerHTML = config.notes.map((note) => `<div class="note">${note}</div>`).join('');
+      monthlyControls.style.display = mode === 'monthly' ? 'grid' : 'none';
+      quarterlyControls.style.display = mode === 'quarterly' ? 'grid' : 'none';
+      modeButtons.forEach((button) => button.classList.toggle('active', button.dataset.mode === mode));
+      renderModeControls('monthly');
+      renderModeControls('quarterly');
+    }
+
+    modeButtons.forEach((button) => {
+      button.addEventListener('click', () => render(button.dataset.mode));
+    });
+
+    document.querySelectorAll('#monthly-year-list button').forEach((button) => {
+      button.addEventListener('click', () => setYear('monthly', Number(button.dataset.year)));
+    });
+
+    document.querySelectorAll('#quarterly-year-list button').forEach((button) => {
+      button.addEventListener('click', () => setYear('quarterly', Number(button.dataset.year)));
+    });
+
+    document.querySelectorAll('#monthly-presets .range-chip').forEach((button) => {
+      button.addEventListener('click', () => {
+        if (button.classList.contains('disabled')) return;
+        applyPreset('monthly', button.dataset.preset);
+      });
+    });
+
+    document.querySelectorAll('#quarterly-presets .range-chip').forEach((button) => {
+      button.addEventListener('click', () => {
+        if (button.classList.contains('disabled')) return;
+        applyPreset('quarterly', button.dataset.preset);
+      });
+    });
+
+    document.querySelectorAll('#monthly-grid .month-chip').forEach((button) => {
+      button.addEventListener('click', () => {
+        if (button.classList.contains('disabled')) return;
+        applyCustomClick('monthly', Number(button.dataset.index));
+      });
+    });
+
+    document.querySelectorAll('#quarterly-grid .quarter-chip').forEach((button) => {
+      button.addEventListener('click', () => {
+        if (button.classList.contains('disabled')) return;
+        applyCustomClick('quarterly', Number(button.dataset.index));
+      });
+    });
+
+    render('monthly');
+  </script>
+</body>
+</html>
