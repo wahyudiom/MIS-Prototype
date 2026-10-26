@@ -1,20 +1,16 @@
 
 import React, { useMemo, useState } from 'react';
-import type { DetailKPICardData, MonthlyTrendData, DailyTrendData } from '../types';
+import type { DetailKPICardData, DailyTrendData } from '../types';
 import { 
     DetailKPICard, 
     DataTable, 
-    MonthlyTrendChart, 
     ConcentrationChart, 
     TrendComposedChart,
-    ClientTrendChart,
     ADVCombinedBreakdown,
     formatCurrency, 
     formatNumber,
-    SectionTitle,
-    DateRangeSelector,
-    DateSelection
 } from '../components/Shared';
+import { CalendarIcon } from '../components/Icons';
 
 interface DetailInstitutionalBusinessProps {
   onSalespersonClick: (name: string) => void;
@@ -51,93 +47,246 @@ const kpiData: DetailKPICardData[] = [
   },
 ];
 
-const generateDailyBarLine = (baseVal: number): DailyTrendData[] => {
-    return Array.from({length: 30}, (_, i) => {
-        const d = new Date();
-        d.setDate(d.getDate() - (30 - i));
+type TrendFrequency = 'daily' | 'monthly' | 'yearly';
+
+type TrendRanges = {
+    daily: { start: string; end: string };
+    monthly: { start: string; end: string };
+    yearly: { start: number; end: number };
+};
+
+type TrendBucket = {
+    label: string;
+    start: Date;
+    end: Date;
+};
+
+type InstitutionalDailyFact = {
+    volume: number;
+    volumeChange: number;
+    newClients: number;
+    totalClients: number;
+    revenue: number;
+    revenueChange: number;
+    domesticAdv: number;
+    foreignAdv: number;
+    corporateAdv: number;
+    financialInstitutionAdv: number;
+    otherInstitutionAdv: number;
+    retailAdv: number;
+    securitiesCompanyAdv: number;
+};
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const DATA_EPOCH = new Date(Date.UTC(2022, 0, 1));
+const LATEST_AVAILABLE_DATE = '2026-08-17';
+const EARLIEST_AVAILABLE_DATE = '2022-01-01';
+const AVAILABLE_YEARS = [2022, 2023, 2024, 2025, 2026];
+const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+const parseIsoDate = (value: string) => new Date(`${value}T00:00:00Z`);
+
+const startOfMonth = (value: string) => {
+    const [year, month] = value.split('-').map(Number);
+    return new Date(Date.UTC(year, month - 1, 1));
+};
+
+const endOfMonth = (value: string) => {
+    const [year, month] = value.split('-').map(Number);
+    return new Date(Date.UTC(year, month, 0));
+};
+
+const minDate = (left: Date, right: Date) => left.getTime() <= right.getTime() ? left : right;
+
+const eachDate = (start: Date, end: Date) => {
+    const dates: Date[] = [];
+    for (let time = start.getTime(); time <= end.getTime(); time += DAY_MS) {
+        dates.push(new Date(time));
+    }
+    return dates;
+};
+
+const buildDailyFact = (date: Date): InstitutionalDailyFact => {
+    const dayIndex = Math.round((date.getTime() - DATA_EPOCH.getTime()) / DAY_MS);
+    const shortWave = Math.sin(dayIndex / 9);
+    const longWave = Math.cos(dayIndex / 33);
+    const totalAdv = 15.5 + dayIndex * 0.0065 + longWave * 2.8;
+    const domesticShare = 0.63 + shortWave * 0.055;
+    const retailShare = 0.48 + shortWave * 0.04;
+    const corporateShare = 0.09 + longWave * 0.01;
+    const financialShare = 0.24 - shortWave * 0.02;
+    const securitiesShare = 0.09 + longWave * 0.01;
+    const otherShare = 1 - retailShare - corporateShare - financialShare - securitiesShare;
+
+    return {
+        volume: Math.round(58e9 + dayIndex * 12e6 + Math.abs(shortWave) * 31e9),
+        volumeChange: Number((1.6 + Math.sin(dayIndex / 8) * 5.4).toFixed(1)),
+        newClients: Math.abs((dayIndex * 11 + 3) % 3),
+        totalClients: 120 + Math.floor(dayIndex / 27),
+        revenue: Math.round(255e6 + Math.abs(Math.cos(dayIndex / 10)) * 175e6 + (dayIndex % 4) * 9e6),
+        revenueChange: Number((2.2 + Math.cos(dayIndex / 11) * 5.8).toFixed(1)),
+        domesticAdv: Number((totalAdv * domesticShare).toFixed(2)),
+        foreignAdv: Number((totalAdv * (1 - domesticShare)).toFixed(2)),
+        corporateAdv: Number((totalAdv * corporateShare).toFixed(2)),
+        financialInstitutionAdv: Number((totalAdv * financialShare).toFixed(2)),
+        otherInstitutionAdv: Number((totalAdv * otherShare).toFixed(2)),
+        retailAdv: Number((totalAdv * retailShare).toFixed(2)),
+        securitiesCompanyAdv: Number((totalAdv * securitiesShare).toFixed(2)),
+    };
+};
+
+const formatDailyAxisLabel = (date: Date) => new Intl.DateTimeFormat('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    timeZone: 'UTC',
+}).format(date);
+
+const formatMonthLabel = (date: Date) => `${MONTH_LABELS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
+
+const buildTrendBuckets = (frequency: TrendFrequency, ranges: TrendRanges): TrendBucket[] => {
+    const latestDate = parseIsoDate(LATEST_AVAILABLE_DATE);
+
+    if (frequency === 'daily') {
+        const start = parseIsoDate(ranges.daily.start);
+        const end = minDate(parseIsoDate(ranges.daily.end), latestDate);
+        return eachDate(start, end).map((date) => ({ label: formatDailyAxisLabel(date), start: date, end: date }));
+    }
+
+    if (frequency === 'monthly') {
+        const start = startOfMonth(ranges.monthly.start);
+        const end = startOfMonth(ranges.monthly.end);
+        const buckets: TrendBucket[] = [];
+        for (let cursor = start; cursor.getTime() <= end.getTime(); cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1))) {
+            buckets.push({
+                label: formatMonthLabel(cursor),
+                start: cursor,
+                end: minDate(endOfMonth(`${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, '0')}`), latestDate),
+            });
+        }
+        return buckets;
+    }
+
+    return Array.from({ length: ranges.yearly.end - ranges.yearly.start + 1 }, (_, index) => {
+        const year = ranges.yearly.start + index;
         return {
-            date: d.toLocaleDateString('en-US', {month: 'short', day: '2-digit'}),
-            barValue1: baseVal + Math.floor(Math.random() * baseVal * 0.4),
-            lineValue: (Math.random() * 10 - 5)
+            label: String(year),
+            start: new Date(Date.UTC(year, 0, 1)),
+            end: minDate(new Date(Date.UTC(year, 11, 31)), latestDate),
         };
     });
 };
 
-const generateDailyClientLineTrend = (base1: number, base2: number): DailyTrendData[] => {
-    return Array.from({length: 30}, (_, i) => {
-        const d = new Date();
-        d.setDate(d.getDate() - (30 - i));
-        return {
-            date: d.toLocaleDateString('en-US', {month: 'short', day: '2-digit'}),
-            barValue1: base2 + Math.floor(Math.random() * base2 * 0.5), // New Clients as Bar
-            lineValue: base1 + Math.floor(Math.random() * base1 * 0.2)  // Existing Clients as Line
-        };
-    });
+const average = (values: number[]) => values.reduce((sum, value) => sum + value, 0) / Math.max(values.length, 1);
+
+const aggregateBucket = (bucket: TrendBucket) => {
+    const facts = eachDate(bucket.start, bucket.end).map(buildDailyFact);
+    const finalFact = facts[facts.length - 1] ?? buildDailyFact(bucket.start);
+
+    return {
+        label: bucket.label,
+        volume: facts.reduce((sum, fact) => sum + fact.volume, 0),
+        volumeChange: Number(average(facts.map((fact) => fact.volumeChange)).toFixed(1)),
+        newClients: facts.reduce((sum, fact) => sum + fact.newClients, 0),
+        totalClients: finalFact.totalClients,
+        revenue: facts.reduce((sum, fact) => sum + fact.revenue, 0),
+        revenueChange: Number(average(facts.map((fact) => fact.revenueChange)).toFixed(1)),
+        domesticAdv: Number(average(facts.map((fact) => fact.domesticAdv)).toFixed(2)),
+        foreignAdv: Number(average(facts.map((fact) => fact.foreignAdv)).toFixed(2)),
+        corporateAdv: Number(average(facts.map((fact) => fact.corporateAdv)).toFixed(2)),
+        financialInstitutionAdv: Number(average(facts.map((fact) => fact.financialInstitutionAdv)).toFixed(2)),
+        otherInstitutionAdv: Number(average(facts.map((fact) => fact.otherInstitutionAdv)).toFixed(2)),
+        retailAdv: Number(average(facts.map((fact) => fact.retailAdv)).toFixed(2)),
+        securitiesCompanyAdv: Number(average(facts.map((fact) => fact.securitiesCompanyAdv)).toFixed(2)),
+    };
 };
 
-const volumeTrendData: MonthlyTrendData[] = [
-  { month: 'Mar 2025', value1: 1.0e12, trend: 1.0 }, { month: 'Apr 2025', value1: 1.1e12, trend: 1.2 },
-  { month: 'May 2025', value1: 1.15e12, trend: 1.1 }, { month: 'Jun 2025', value1: 1.18e12, trend: 1.0 },
-  { month: 'Jul 2025', value1: 1.19e12, trend: 0.8 }, { month: 'Aug 2025', value1: 1.2e12, trend: 0.5 },
-  { month: 'Sep 2025', value1: 1.2e12, trend: 1.5 }, { month: 'Oct 2025', value1: 1.5e12, trend: 2.1 },
-  { month: 'Nov 2025', value1: 1.4e12, trend: 0.5 }, { month: 'Dec 2025', value1: 1.8e12, trend: 3.2 },
-  { month: 'Jan 2026', value1: 2.1e12, trend: 4.1 }, { month: 'Feb 2026', value1: 2.0e12, trend: -1.2 },
-];
+const percentage = (value: number, total: number) => total > 0 ? Math.round((value / total) * 100) : 0;
 
-const revenueTrendData: MonthlyTrendData[] = [
-  { month: 'Mar 2025', value1: 9e9, trend: 1.5 }, { month: 'Apr 2025', value1: 9.5e9, trend: 2.0 },
-  { month: 'May 2025', value1: 10e9, trend: 1.8 }, { month: 'Jun 2025', value1: 10.2e9, trend: 1.5 },
-  { month: 'Jul 2025', value1: 10.5e9, trend: 1.2 }, { month: 'Aug 2025', value1: 10.8e9, trend: 1.0 },
-  { month: 'Sep 2025', value1: 11e9, trend: 2.2 }, { month: 'Oct 2025', value1: 12.5e9, trend: 5.1 },
-  { month: 'Nov 2025', value1: 12e9, trend: -1.0 }, { month: 'Dec 2025', value1: 14e9, trend: 8.2 },
-  { month: 'Jan 2026', value1: 15.5e9, trend: 10.5 }, { month: 'Feb 2026', value1: 15e9, trend: -2.1 },
-];
+const buildTrendDatasets = (buckets: TrendBucket[]) => {
+    const aggregates = buckets.map(aggregateBucket);
+    const selectedVolume = aggregates.reduce((sum, point) => sum + point.volume, 0);
+    const concentrationSignal = aggregates[aggregates.length - 1]?.totalClients ?? 0;
+    const topTenShare = 87 + Math.round(Math.sin(concentrationSignal / 13) * 2);
+    const clientWeights = [20, 16, 13, 11, 10, 8, 7, 6, 5, 4];
+    const concentration = clientWeights.map((weight, index) => ({
+        name: `Client ${String.fromCharCode(65 + index)}`,
+        volume: selectedVolume * (topTenShare / 100) * (weight / 100),
+    }));
+    concentration.push({ name: 'Other Clients', volume: selectedVolume * ((100 - topTenShare) / 100) });
 
-const concentrationData = [
-    { name: 'Client A', volume: 3e12 }, { name: 'Client B', volume: 2.5e12 },
-    { name: 'Client C', volume: 2e12 }, { name: 'Client D', volume: 1.5e12 },
-    { name: 'Client E', volume: 1e12 }, { name: 'Client F', volume: 0.8e12 },
-    { name: 'Client G', volume: 0.5e12 }, { name: 'Others', volume: 3.7e12 },
-];
+    return {
+        volume: aggregates.map<DailyTrendData>((point) => ({
+            date: point.label,
+            barValue1: point.volume,
+            lineValue: point.volumeChange,
+        })),
+        clients: aggregates.map<DailyTrendData>((point) => ({
+            date: point.label,
+            barValue1: point.newClients,
+            lineValue: point.totalClients,
+        })),
+        revenue: aggregates.map<DailyTrendData>((point) => ({
+            date: point.label,
+            barValue1: point.revenue,
+            lineValue: point.revenueChange,
+        })),
+        concentration,
+        topTenShare,
+        domesticForeign: aggregates.map((point) => {
+            const total = point.domesticAdv + point.foreignAdv;
+            return {
+                month: point.label,
+                domestic: point.domesticAdv,
+                foreign: point.foreignAdv,
+                total: Number(total.toFixed(2)),
+                domPct: percentage(point.domesticAdv, total),
+                forPct: percentage(point.foreignAdv, total),
+            };
+        }),
+        investorTypes: aggregates.map((point) => {
+            const total = point.corporateAdv + point.financialInstitutionAdv + point.otherInstitutionAdv + point.retailAdv + point.securitiesCompanyAdv;
+            return {
+                month: point.label,
+                retail: point.retailAdv,
+                corporate: point.corporateAdv,
+                finInst: point.financialInstitutionAdv,
+                secCo: point.securitiesCompanyAdv,
+                otherInst: point.otherInstitutionAdv,
+                total: Number(total.toFixed(2)),
+                retailPct: percentage(point.retailAdv, total),
+                corpPct: percentage(point.corporateAdv, total),
+                finPct: percentage(point.financialInstitutionAdv, total),
+                secPct: percentage(point.securitiesCompanyAdv, total),
+                otherPct: percentage(point.otherInstitutionAdv, total),
+            };
+        }),
+    };
+};
 
-const clientTrendData = [
-    { month: 'Mar 2025', existing: 120, new: 3 }, { month: 'Apr 2025', existing: 123, new: 4 },
-    { month: 'May 2025', existing: 127, new: 5 }, { month: 'Jun 2025', existing: 132, new: 4 },
-    { month: 'Jul 2025', existing: 136, new: 3 }, { month: 'Aug 2025', existing: 142, new: 5 },
-    { month: 'Sep 2025', existing: 150, new: 5 }, { month: 'Oct 2025', existing: 155, new: 7 },
-    { month: 'Nov 2025', existing: 162, new: 6 }, { month: 'Dec 2025', existing: 168, new: 8 },
-    { month: 'Jan 2026', existing: 176, new: 10 }, { month: 'Feb 2026', existing: 186, new: 12 },
-];
+const formatDailyRange = (startValue: string, endValue: string) => {
+    const start = parseIsoDate(startValue);
+    const end = parseIsoDate(endValue);
+    const sameYear = start.getUTCFullYear() === end.getUTCFullYear();
+    const startLabel = new Intl.DateTimeFormat('en-GB', {
+        day: 'numeric',
+        month: 'short',
+        year: sameYear ? undefined : 'numeric',
+        timeZone: 'UTC',
+    }).format(start);
+    const endLabel = new Intl.DateTimeFormat('en-GB', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        timeZone: 'UTC',
+    }).format(end);
+    return `${startLabel} – ${endLabel}`;
+};
 
-const advBreakdownData = [
-  { month: 'Mar 2025', domestic: 8.03, foreign: 5.82, total: 13.85, domPct: 58, forPct: 42, change: 0 },
-  { month: 'Apr 2025', domestic: 8.16, foreign: 4.80, total: 12.96, domPct: 63, forPct: 37, change: -6.43 },
-  { month: 'May 2025', domestic: 9.31, foreign: 5.47, total: 14.78, domPct: 63, forPct: 37, change: 14.04 },
-  { month: 'Jun 2025', domestic: 9.31, foreign: 5.96, total: 15.27, domPct: 61, forPct: 39, change: 3.32 },
-  { month: 'Jul 2025', domestic: 9.26, foreign: 4.77, total: 14.03, domPct: 66, forPct: 34, change: -8.12 },
-  { month: 'Aug 2025', domestic: 12.55, foreign: 7.69, total: 20.24, domPct: 62, forPct: 38, change: 44.26 },
-  { month: 'Sep 2025', domestic: 14.41, foreign: 9.61, total: 24.02, domPct: 60, forPct: 40, change: 18.68 },
-  { month: 'Oct 2025', domestic: 17.54, foreign: 7.52, total: 25.06, domPct: 70, forPct: 30, change: 4.33 },
-  { month: 'Nov 2025', domestic: 15.27, foreign: 7.87, total: 23.14, domPct: 66, forPct: 34, change: -7.66 },
-  { month: 'Dec 2025', domestic: 19.03, foreign: 8.16, total: 27.19, domPct: 70, forPct: 30, change: 17.50 },
-  { month: 'Jan 2026', domestic: 24.09, foreign: 10.82, total: 34.91, domPct: 69, forPct: 31, change: 28.39 },
-  { month: 'Feb 2026', domestic: 22.50, foreign: 10.50, total: 33.00, domPct: 68, forPct: 32, change: -5.47 },
-];
-
-const advInvestorTypeData = [
-  { month: 'Mar 2025', retail: 6.5, corporate: 1.2, finInst: 3.5, secCo: 1.5, otherInst: 1.15, total: 13.85, retailPct: 47, corpPct: 9, finPct: 25, secPct: 11, otherPct: 8, change: 0 },
-  { month: 'Apr 2025', retail: 6.0, corporate: 1.1, finInst: 3.2, secCo: 1.4, otherInst: 1.26, total: 12.96, retailPct: 46, corpPct: 8, finPct: 25, secPct: 11, otherPct: 10, change: -6.43 },
-  { month: 'May 2025', retail: 7.2, corporate: 1.3, finInst: 3.8, secCo: 1.6, otherInst: 0.88, total: 14.78, retailPct: 49, corpPct: 9, finPct: 26, secPct: 11, otherPct: 6, change: 14.04 },
-  { month: 'Jun 2025', retail: 7.5, corporate: 1.4, finInst: 3.9, secCo: 1.7, otherInst: 0.77, total: 15.27, retailPct: 49, corpPct: 9, finPct: 26, secPct: 11, otherPct: 5, change: 3.32 },
-  { month: 'Jul 2025', retail: 7.0, corporate: 1.2, finInst: 3.6, secCo: 1.5, otherInst: 0.73, total: 14.03, retailPct: 50, corpPct: 9, finPct: 26, secPct: 11, otherPct: 5, change: -8.12 },
-  { month: 'Aug 2025', retail: 10.5, corporate: 1.8, finInst: 5.2, secCo: 2.1, otherInst: 0.64, total: 20.24, retailPct: 52, corpPct: 9, finPct: 26, secPct: 10, otherPct: 3, change: 44.26 },
-  { month: 'Sep 2025', retail: 12.0, corporate: 2.2, finInst: 6.5, secCo: 2.5, otherInst: 0.82, total: 24.02, retailPct: 50, corpPct: 9, finPct: 27, secPct: 10, otherPct: 3, change: 18.68 },
-  { month: 'Oct 2025', retail: 14.5, corporate: 2.5, finInst: 5.5, secCo: 1.8, otherInst: 0.76, total: 25.06, retailPct: 58, corpPct: 10, finPct: 22, secPct: 7, otherPct: 3, change: 4.33 },
-  { month: 'Nov 2025', retail: 12.5, corporate: 2.1, finInst: 5.8, secCo: 2.0, otherInst: 0.74, total: 23.14, retailPct: 54, corpPct: 9, finPct: 25, secPct: 9, otherPct: 3, change: -7.66 },
-  { month: 'Dec 2025', retail: 15.0, corporate: 2.8, finInst: 6.2, secCo: 2.4, otherInst: 0.79, total: 27.19, retailPct: 55, corpPct: 10, finPct: 23, secPct: 9, otherPct: 3, change: 17.50 },
-  { month: 'Jan 2026', retail: 20.5, corporate: 3.5, finInst: 8.2, secCo: 1.8, otherInst: 0.91, total: 34.91, retailPct: 59, corpPct: 10, finPct: 23, secPct: 5, otherPct: 3, change: 28.39 },
-  { month: 'Feb 2026', retail: 19.5, corporate: 3.2, finInst: 7.8, secCo: 1.7, otherInst: 0.80, total: 33.00, retailPct: 59, corpPct: 10, finPct: 24, secPct: 5, otherPct: 2, change: -5.47 },
-];
+const countMonths = (startValue: string, endValue: string) => {
+    const start = startOfMonth(startValue);
+    const end = startOfMonth(endValue);
+    return (end.getUTCFullYear() - start.getUTCFullYear()) * 12 + end.getUTCMonth() - start.getUTCMonth() + 1;
+};
 
 const leaderboardData = [
     [1, "Grace Hopper", formatCurrency(3.5e12), formatCurrency(18e9), 15, 500],
@@ -146,12 +295,73 @@ const leaderboardData = [
 ];
 
 const DetailInstitutionalBusiness: React.FC<DetailInstitutionalBusinessProps> = ({ onSalespersonClick }) => {
-    const dailyVolumeTrend = useMemo(() => generateDailyBarLine(80e9), []);
-    const dailyClientTrend = useMemo(() => generateDailyClientLineTrend(180, 2), []);
-    const dailyRevenueTrend = useMemo(() => generateDailyBarLine(400e6), []);
+    const [trendFrequency, setTrendFrequency] = useState<TrendFrequency>('daily');
+    const [isTimeFilterOpen, setIsTimeFilterOpen] = useState(false);
+    const [trendRanges, setTrendRanges] = useState<TrendRanges>({
+        daily: { start: '2026-07-19', end: LATEST_AVAILABLE_DATE },
+        monthly: { start: '2025-09', end: '2026-08' },
+        yearly: { start: 2022, end: 2026 },
+    });
 
-    const [startDate, setStartDate] = useState<DateSelection>({ month: 'Jan', year: '2026' });
-    const [endDate, setEndDate] = useState<DateSelection>({ month: 'Jun', year: '2026' });
+    const trendBuckets = useMemo(
+        () => buildTrendBuckets(trendFrequency, trendRanges),
+        [trendFrequency, trendRanges],
+    );
+    const trendDatasets = useMemo(() => buildTrendDatasets(trendBuckets), [trendBuckets]);
+    const frequencyLabel = `${trendFrequency.charAt(0).toUpperCase()}${trendFrequency.slice(1)}`;
+    const trendRangeSubtitle = useMemo(() => {
+        if (trendFrequency === 'daily') {
+            return formatDailyRange(trendRanges.daily.start, trendRanges.daily.end);
+        }
+
+        if (trendFrequency === 'monthly') {
+            const monthCount = countMonths(trendRanges.monthly.start, trendRanges.monthly.end);
+            return `${monthCount}-month range: ${formatMonthLabel(startOfMonth(trendRanges.monthly.start))} – ${formatMonthLabel(startOfMonth(trendRanges.monthly.end))}`;
+        }
+
+        const yearCount = trendRanges.yearly.end - trendRanges.yearly.start + 1;
+        return `${yearCount}-year range: ${trendRanges.yearly.start} – ${trendRanges.yearly.end}`;
+    }, [trendFrequency, trendRanges]);
+
+    const updateDailyStart = (start: string) => {
+        setTrendRanges((current) => ({
+            ...current,
+            daily: {
+                start,
+                end: start > current.daily.end ? start : current.daily.end,
+            },
+        }));
+    };
+
+    const updateDailyEnd = (end: string) => {
+        setTrendRanges((current) => ({
+            ...current,
+            daily: {
+                start: end < current.daily.start ? end : current.daily.start,
+                end,
+            },
+        }));
+    };
+
+    const updateMonthlyStart = (start: string) => {
+        setTrendRanges((current) => ({
+            ...current,
+            monthly: {
+                start,
+                end: start > current.monthly.end ? start : current.monthly.end,
+            },
+        }));
+    };
+
+    const updateMonthlyEnd = (end: string) => {
+        setTrendRanges((current) => ({
+            ...current,
+            monthly: {
+                start: end < current.monthly.start ? end : current.monthly.start,
+                end,
+            },
+        }));
+    };
 
     return (
         <div className="p-4 sm:p-6 md:p-8 space-y-8">
@@ -159,50 +369,184 @@ const DetailInstitutionalBusiness: React.FC<DetailInstitutionalBusinessProps> = 
                 {kpiData.map(kpi => <DetailKPICard key={kpi.label} data={kpi} />)}
             </div>
 
-            {/* Daily Trends Section - Changed to 1x3 (1 chart each row) format */}
-            <section>
-                <SectionTitle title="DAILY TRENDS" />
-                <div className="grid grid-cols-1 gap-6">
-                    <TrendComposedChart 
-                        data={dailyVolumeTrend} 
-                        title="Daily Transaction Volume Trends Last 30 Calendar Days" 
-                        barLabel1="Volume"
-                        lineLabel="Changes %"
-                        isCurrency={true}
-                        isLinePercentage={true}
-                    />
-                    <TrendComposedChart 
-                        data={dailyClientTrend} 
-                        title="Daily New Client Acquisition vs. Total Client Last 30 Calendar Days" 
-                        barLabel1="New Clients"
-                        lineLabel="Existing Clients"
-                    />
-                    <TrendComposedChart 
-                        data={dailyRevenueTrend} 
-                        title="Daily Total Revenue Trends Last 30 Calendar Days" 
-                        barLabel1="Revenue"
-                        lineLabel="Changes %"
-                        isCurrency={true}
-                        isLinePercentage={true}
-                    />
-                </div>
-            </section>
+            <section className="border-t border-slate-200 pt-8">
+                <header className="mb-6 flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                        <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-400">Trends</p>
+                        <h2 className="mt-1 text-2xl font-black tracking-tight text-slate-900">{frequencyLabel} Trends Overview</h2>
+                        <p className="mt-2 text-sm font-semibold text-slate-500">{trendRangeSubtitle}</p>
+                    </div>
 
-            {/* Monthly Trends Section */}
-            <section>
-                <SectionTitle title="MONTHLY TRENDS" />
+                    <div className="relative">
+                        <button
+                            type="button"
+                            onClick={() => setIsTimeFilterOpen((open) => !open)}
+                            aria-expanded={isTimeFilterOpen}
+                            aria-haspopup="dialog"
+                            className="min-w-[270px] rounded-2xl border border-gray-200 bg-white px-4 py-3 text-left shadow-sm transition-colors hover:border-blue-200"
+                        >
+                            <div className="flex items-center justify-between gap-4">
+                                <div className="flex items-center gap-3">
+                                    <CalendarIcon className="h-4 w-4 text-blue-500" />
+                                    <div>
+                                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Time Filter</p>
+                                        <p className="text-sm font-black text-slate-950">{trendRangeSubtitle}</p>
+                                    </div>
+                                </div>
+                                <span aria-hidden="true" className="text-lg text-slate-400">{isTimeFilterOpen ? '⌃' : '⌄'}</span>
+                            </div>
+                        </button>
+
+                        {isTimeFilterOpen && (
+                            <div
+                                role="dialog"
+                                aria-label="Institutional Business trends time filter"
+                                className="absolute right-0 top-full z-50 mt-3 w-[430px] max-w-[calc(100vw-2rem)] rounded-3xl border border-gray-200 bg-white p-5 shadow-2xl"
+                            >
+                                <div className="mb-4 flex items-center justify-between gap-3">
+                                    <h3 className="text-lg font-black text-slate-950">Time Filter</h3>
+                                    <button type="button" onClick={() => setIsTimeFilterOpen(false)} className="text-sm font-black text-slate-400 hover:text-slate-700" aria-label="Close time filter">
+                                        ✕
+                                    </button>
+                                </div>
+
+                                <p className="mb-2 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Frequency</p>
+                                <div className="mb-5 flex rounded-2xl border border-gray-200 bg-gray-50 p-1">
+                                    {(['daily', 'monthly', 'yearly'] as TrendFrequency[]).map((frequency) => (
+                                        <button
+                                            key={frequency}
+                                            type="button"
+                                            onClick={() => setTrendFrequency(frequency)}
+                                            aria-pressed={trendFrequency === frequency}
+                                            className={`flex-1 rounded-xl px-3 py-2 text-xs font-black transition-all ${
+                                                trendFrequency === frequency ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:bg-white'
+                                            }`}
+                                        >
+                                            {frequency.charAt(0).toUpperCase()}{frequency.slice(1)}
+                                        </button>
+                                    ))}
+                                </div>
+
+                                {trendFrequency === 'daily' && (
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <label className="space-y-1">
+                                            <span className="text-[10px] font-bold uppercase text-gray-400">From date</span>
+                                            <input
+                                                type="date"
+                                                min={EARLIEST_AVAILABLE_DATE}
+                                                max={LATEST_AVAILABLE_DATE}
+                                                value={trendRanges.daily.start}
+                                                onChange={(event) => updateDailyStart(event.target.value)}
+                                                className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm font-bold text-slate-800 outline-none focus:border-blue-400"
+                                            />
+                                        </label>
+                                        <label className="space-y-1">
+                                            <span className="text-[10px] font-bold uppercase text-gray-400">To date</span>
+                                            <input
+                                                type="date"
+                                                min={EARLIEST_AVAILABLE_DATE}
+                                                max={LATEST_AVAILABLE_DATE}
+                                                value={trendRanges.daily.end}
+                                                onChange={(event) => updateDailyEnd(event.target.value)}
+                                                className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm font-bold text-slate-800 outline-none focus:border-blue-400"
+                                            />
+                                        </label>
+                                    </div>
+                                )}
+
+                                {trendFrequency === 'monthly' && (
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <label className="space-y-1">
+                                            <span className="text-[10px] font-bold uppercase text-gray-400">From month</span>
+                                            <input
+                                                type="month"
+                                                min="2022-01"
+                                                max="2026-08"
+                                                value={trendRanges.monthly.start}
+                                                onChange={(event) => updateMonthlyStart(event.target.value)}
+                                                className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm font-bold text-slate-800 outline-none focus:border-blue-400"
+                                            />
+                                        </label>
+                                        <label className="space-y-1">
+                                            <span className="text-[10px] font-bold uppercase text-gray-400">To month</span>
+                                            <input
+                                                type="month"
+                                                min="2022-01"
+                                                max="2026-08"
+                                                value={trendRanges.monthly.end}
+                                                onChange={(event) => updateMonthlyEnd(event.target.value)}
+                                                className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm font-bold text-slate-800 outline-none focus:border-blue-400"
+                                            />
+                                        </label>
+                                    </div>
+                                )}
+
+                                {trendFrequency === 'yearly' && (
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <label className="space-y-1">
+                                            <span className="text-[10px] font-bold uppercase text-gray-400">Start year</span>
+                                            <select
+                                                value={trendRanges.yearly.start}
+                                                onChange={(event) => {
+                                                    const start = Number(event.target.value);
+                                                    setTrendRanges((current) => ({ ...current, yearly: { start, end: Math.max(start, current.yearly.end) } }));
+                                                }}
+                                                className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm font-bold text-slate-800 outline-none focus:border-blue-400"
+                                            >
+                                                {AVAILABLE_YEARS.map((year) => <option key={year} value={year}>{year}</option>)}
+                                            </select>
+                                        </label>
+                                        <label className="space-y-1">
+                                            <span className="text-[10px] font-bold uppercase text-gray-400">End year</span>
+                                            <select
+                                                value={trendRanges.yearly.end}
+                                                onChange={(event) => {
+                                                    const end = Number(event.target.value);
+                                                    setTrendRanges((current) => ({ ...current, yearly: { start: Math.min(end, current.yearly.start), end } }));
+                                                }}
+                                                className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm font-bold text-slate-800 outline-none focus:border-blue-400"
+                                            >
+                                                {AVAILABLE_YEARS.map((year) => <option key={year} value={year}>{year}</option>)}
+                                            </select>
+                                        </label>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </header>
+
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <MonthlyTrendChart data={volumeTrendData} dataKey1="Transaction Volume" trendKey="Change" title="Monthly Transaction Volume Trend (MoM)" isCurrency={true} />
-                    <ConcentrationChart data={concentrationData} title='Monthly Client Concentration (Top 10 Contributors by Transaction Value)' />
-                    <ClientTrendChart 
-                        data={clientTrendData}
-                        title="Monthly New Client Acquisition vs. Total Client"
+                    <TrendComposedChart
+                        data={trendDatasets.volume}
+                        title={`${frequencyLabel} Transaction Volume Trends`}
+                        barLabel1="Volume"
+                        lineLabel="Changes (%)"
+                        isCurrency={true}
+                        isLinePercentage={true}
                     />
-                    <MonthlyTrendChart data={revenueTrendData} dataKey1="Revenue" trendKey="Change" title="Monthly Total Revenue Trend (MoM)" isCurrency={true} />
+                    <TrendComposedChart
+                        data={trendDatasets.clients}
+                        title={`${frequencyLabel} New vs Total Client Trends`}
+                        barLabel1="New Clients"
+                        lineLabel="Total Clients"
+                    />
+                    <TrendComposedChart
+                        data={trendDatasets.revenue}
+                        title={`${frequencyLabel} Total Revenue Trends`}
+                        barLabel1="Revenue"
+                        lineLabel="Changes (%)"
+                        isCurrency={true}
+                        isLinePercentage={true}
+                    />
+                    <ConcentrationChart
+                        data={trendDatasets.concentration}
+                        title={`Client Concentration (Top 10 Contribute ${trendDatasets.topTenShare}% Volume)`}
+                    />
                     <div className="lg:col-span-2">
-                        <ADVCombinedBreakdown 
-                            domesticData={advBreakdownData}
-                            investorTypeData={advInvestorTypeData}
+                        <ADVCombinedBreakdown
+                            domesticData={trendDatasets.domesticForeign}
+                            investorTypeData={trendDatasets.investorTypes}
                             title="Average Daily Value - Breakdown by Investor"
                             subtitle="In IDR Billion"
                             note="Note: Percentages represent value share of total ADV on IDX stock market. Other Institutions include Insurance, Pension Fund, Foundation, and Others."
@@ -216,14 +560,6 @@ const DetailInstitutionalBusiness: React.FC<DetailInstitutionalBusinessProps> = 
               columns={["Ranking", "Sales/Dealer", "Transaction Volume", "Total Revenue (Fee)", "Active Clients", "Total Transactions"]} 
               data={leaderboardData} 
               onRowClick={(row) => onSalespersonClick(row[1] as string)}
-              headerAction={
-                <DateRangeSelector 
-                  start={startDate} 
-                  end={endDate} 
-                  onStartChange={setStartDate} 
-                  onEndChange={setEndDate} 
-                />
-              }
             />
         </div>
     );

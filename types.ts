@@ -35,6 +35,8 @@ export enum View {
   OnboardingKYCRejection,
   OnboardingCustomerFunnel,
   OnboardingSLATrend,
+  CustomerOnboarding,
+  OnboardingOverviewV2,
 }
 
 export interface WidgetData {

@@ -1,5 +1,7 @@
 ﻿export type ProductBreakdownKey = 'equity' | 'mutualFund' | 'bonds';
 export type Period = '30d' | '12m';
+export type ProductChartProduct = 'equity' | 'mutual-fund' | 'bonds';
+export type ChartValueTab = 'transactionValue' | 'assetValue';
 
 export type BreakdownDataPoint = {
   label: string;
@@ -13,13 +15,25 @@ export type BreakdownSeries = {
   kind?: 'bar' | 'line';
 };
 
+export type BreakdownChartType = 'stacked-percentage' | 'buy-sell-trend' | 'asset-value-trend';
+
+export type BreakdownChartDataset = {
+  data30d: BreakdownDataPoint[];
+  data12m: BreakdownDataPoint[];
+  series?: BreakdownSeries[];
+  chartType?: BreakdownChartType;
+};
+
+export type BreakdownChartValueDatasets = Record<ChartValueTab, BreakdownChartDataset | undefined>;
+
 export type BreakdownChart = {
   title: string;
   subtitle: string;
-  chartType?: 'stacked-percentage' | 'buy-sell-trend';
+  chartType?: BreakdownChartType;
   series: BreakdownSeries[];
   data30d: BreakdownDataPoint[];
   data12m: BreakdownDataPoint[];
+  valueDatasets?: BreakdownChartValueDatasets;
 };
 
 export type BreakdownPageConfig = {
@@ -64,19 +78,19 @@ const withTotalAmount = (
     totalAmount: totalsPattern[index % totalsPattern.length],
   }));
 
-export const productBreakdownConfigs: Record<ProductBreakdownKey, BreakdownPageConfig> = {
+const baseProductBreakdownConfigs: Record<ProductBreakdownKey, BreakdownPageConfig> = {
   equity: {
     title: 'Equity Breakdown Diagnostic',
     subtitle: 'Trading value share by Client Segment & Regional Area',
     charts: [
       {
-        title: 'AUM Trend',
+        title: 'Transaction Trend',
         subtitle: 'Buy and sell activity with nett amount',
         chartType: 'buy-sell-trend',
         series: [
-          { key: 'Buy', name: 'Buy', color: '#2563eb', kind: 'bar' },
-          { key: 'Sell', name: 'Sell', color: '#f59e0b', kind: 'bar' },
-          { key: 'Nett', name: 'Nett', color: '#8b5cf6', kind: 'line' },
+          { key: 'Buy', name: 'Buy', color: '#10b981', kind: 'bar' },
+          { key: 'Sell', name: 'Sell', color: '#ef4444', kind: 'bar' },
+          { key: 'Nett', name: 'Nett', color: '#f97316', kind: 'line' },
         ],
         data30d: withTotalAmount([
           { label: '1', Buy: 11.8, Sell: 9.4, Nett: 2.4 }, { label: '2', Buy: 13.6, Sell: 10.7, Nett: 2.9 },
@@ -191,13 +205,13 @@ export const productBreakdownConfigs: Record<ProductBreakdownKey, BreakdownPageC
     subtitle: 'Subscription share by Client Segment & Fund Type',
     charts: [
       {
-        title: 'AUM Trend',
+        title: 'Transaction Trend',
         subtitle: 'Subscription and redemption activity with nett amount',
         chartType: 'buy-sell-trend',
         series: [
-          { key: 'Subscribe', name: 'Subscribe', color: '#2563eb', kind: 'bar' },
-          { key: 'Redeem', name: 'Redeem', color: '#f59e0b', kind: 'bar' },
-          { key: 'Nett', name: 'Nett', color: '#8b5cf6', kind: 'line' },
+          { key: 'Subscribe', name: 'Subscribe', color: '#10b981', kind: 'bar' },
+          { key: 'Redeem', name: 'Redeem', color: '#ef4444', kind: 'bar' },
+          { key: 'Nett', name: 'Nett', color: '#f97316', kind: 'line' },
         ],
         data30d: withTotalAmount([
           { label: '1', Subscribe: 8.4, Redeem: 6.1, Nett: 2.3 }, { label: '2', Subscribe: 9.7, Redeem: 7.5, Nett: 2.2 },
@@ -290,13 +304,13 @@ export const productBreakdownConfigs: Record<ProductBreakdownKey, BreakdownPageC
     subtitle: 'Volume share by Bond Type & Client Segment',
     charts: [
       {
-        title: 'AUM Trend',
+        title: 'Transaction Trend',
         subtitle: 'Subscription and redemption activity with nett amount',
         chartType: 'buy-sell-trend',
         series: [
-          { key: 'Subscribe', name: 'Subscribe', color: '#2563eb', kind: 'bar' },
-          { key: 'Redeem', name: 'Redeem', color: '#f59e0b', kind: 'bar' },
-          { key: 'Nett', name: 'Nett', color: '#8b5cf6', kind: 'line' },
+          { key: 'Subscribe', name: 'Subscribe', color: '#10b981', kind: 'bar' },
+          { key: 'Redeem', name: 'Redeem', color: '#ef4444', kind: 'bar' },
+          { key: 'Nett', name: 'Nett', color: '#f97316', kind: 'line' },
         ],
         data30d: [
           { label: '1', Subscribe: 8.4, Redeem: 8.0, Nett: 0.4 },
@@ -404,4 +418,118 @@ export const productBreakdownConfigs: Record<ProductBreakdownKey, BreakdownPageC
     ],
   },
 };
+
+const ASSET_VALUE_SCALE: Record<ProductBreakdownKey, number> = {
+  equity: 1.72,
+  mutualFund: 2.18,
+  bonds: 2.45,
+};
+
+const ASSET_TREND_BASE_BILLIONS: Record<ProductBreakdownKey, number> = {
+  equity: 680,
+  mutualFund: 520,
+  bonds: 1280,
+};
+
+const ASSET_NETT_SCALE: Record<ProductBreakdownKey, number> = {
+  equity: 1,
+  mutualFund: 0.76,
+  bonds: 1.42,
+};
+
+const ASSET_NETT_PATTERN = [12, -8, 15, -6, 22, -14, 18, 5, -9, 16, -12, 24] as const;
+
+const ASSET_TREND_SERIES: BreakdownSeries[] = [
+  { key: 'TotalAsset', name: 'Total Asset', color: '#2563eb', kind: 'bar' },
+  { key: 'Nett', name: 'Nett', color: '#f97316', kind: 'line' },
+];
+
+const ASSET_SEGMENT_BIAS: Record<ProductBreakdownKey, Record<string, number>> = {
+  equity: { Retail: 0.96, Corporate: 1.16, Institutional: 1.12 },
+  mutualFund: { Retail: 1.04, Corporate: 0.92, Institutional: 1.08 },
+  bonds: { Retail: 0.9, Corporate: 1.08, Institutional: 1.18 },
+};
+
+const ASSET_SERIES_OFFSET: Record<ProductBreakdownKey, number> = {
+  equity: 0,
+  mutualFund: 1,
+  bonds: 2,
+};
+
+const normalizeAssetPercentages = (values: number[]) => {
+  const total = values.reduce((sum, value) => sum + value, 0) || 1;
+  const normalized = values.map((value) => Number(((value / total) * 100).toFixed(2)));
+  const difference = Number((100 - normalized.reduce((sum, value) => sum + value, 0)).toFixed(2));
+  normalized[normalized.length - 1] = Number((normalized[normalized.length - 1] + difference).toFixed(2));
+  return normalized;
+};
+
+const createAssetValueData = (
+  chart: BreakdownChart,
+  productKey: ProductBreakdownKey,
+  data: BreakdownDataPoint[],
+): BreakdownDataPoint[] =>
+  data.map((point, pointIndex) => {
+    const nextPoint: BreakdownDataPoint = { label: point.label };
+    const periodDrift = 1 + ((pointIndex % 5) - 2) * 0.018;
+
+    if (chart.chartType === 'buy-sell-trend') {
+      const progress = data.length > 1 ? pointIndex / (data.length - 1) : 0;
+      const dailyAdjustment = data.length > 12 ? 0.35 : 1;
+      const totalAsset = ASSET_TREND_BASE_BILLIONS[productKey] * (0.9 + progress * 0.1) * (1 + ((pointIndex % 4) - 1.5) * 0.006);
+      const nett = ASSET_NETT_PATTERN[pointIndex % ASSET_NETT_PATTERN.length] * ASSET_NETT_SCALE[productKey] * dailyAdjustment;
+
+      nextPoint.TotalAsset = Number(totalAsset.toFixed(1));
+      nextPoint.Nett = Number(nett.toFixed(1));
+    } else {
+      const biasedValues = chart.series.map((series, seriesIndex) => {
+        const fallbackBias = 1 + (((seriesIndex + ASSET_SERIES_OFFSET[productKey]) % 3) - 1) * 0.07;
+        const assetBias = ASSET_SEGMENT_BIAS[productKey][series.key] ?? fallbackBias;
+        return Math.max(0.1, Number(point[series.key] ?? 0) * assetBias);
+      });
+      const normalizedValues = normalizeAssetPercentages(biasedValues);
+      chart.series.forEach((series, seriesIndex) => {
+        nextPoint[series.key] = normalizedValues[seriesIndex];
+      });
+    }
+
+    if (typeof point.totalAmount === 'number') {
+      nextPoint.totalAmount = Number((point.totalAmount * ASSET_VALUE_SCALE[productKey] * periodDrift).toFixed(2));
+    }
+
+    return nextPoint;
+  });
+
+export const addValueDatasets = (
+  chart: BreakdownChart,
+  productKey: ProductBreakdownKey,
+): BreakdownChart => {
+  return {
+    ...chart,
+    valueDatasets: {
+      transactionValue: {
+        data30d: chart.data30d,
+        data12m: chart.data12m,
+      },
+      assetValue: {
+        data30d: createAssetValueData(chart, productKey, chart.data30d),
+        data12m: createAssetValueData(chart, productKey, chart.data12m),
+        series: chart.chartType === 'buy-sell-trend' ? ASSET_TREND_SERIES : chart.series,
+        chartType: chart.chartType === 'buy-sell-trend' ? 'asset-value-trend' : chart.chartType,
+      },
+    },
+  };
+};
+
+export const productBreakdownConfigs = Object.fromEntries(
+  (Object.entries(baseProductBreakdownConfigs) as [ProductBreakdownKey, BreakdownPageConfig][]).map(
+    ([productKey, config]) => [
+      productKey,
+      {
+        ...config,
+        charts: config.charts.map((chart) => addValueDatasets(chart, productKey)),
+      },
+    ],
+  ),
+) as Record<ProductBreakdownKey, BreakdownPageConfig>;
 

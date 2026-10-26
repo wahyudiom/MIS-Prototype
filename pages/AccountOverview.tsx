@@ -1,7 +1,5 @@
 import React, { useMemo, useState } from 'react';
 import {
-  Area,
-  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
@@ -17,16 +15,18 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import {
-  CalendarIcon,
-  UserGroupIcon,
-} from '../components/Icons';
+import { CalendarIcon } from '../components/Icons';
 
 type AccountType = 'Regular' | 'Margin' | 'Syariah' | 'Day Trade';
 type AccountTab = 'All' | AccountType;
-type TypeOverviewMetric = 'totalAccounts' | 'newAccounts' | 'active' | 'dormant';
+type AccountStatusMetric = 'active' | 'close' | 'freezeKsei' | 'block' | 'badDebt' | 'onboarding';
 type PeriodType = 'Daily' | 'Monthly' | 'Quarterly' | 'Annual';
 type PeriodBucketType = 'daily' | 'monthly' | 'quarterly' | 'annual';
+type UniqueTrendSeriesKey = 'allAccountType' | 'regular' | 'margin' | 'syariah' | 'dayTrade';
+
+type UniqueTrendPoint = {
+  label: string;
+} & Record<UniqueTrendSeriesKey, number | null>;
 
 type DailyAccountSnapshot = {
   date: string;
@@ -125,6 +125,15 @@ const STATUS_COLORS = {
   onboarding: '#14b8a6',
 };
 
+const ACCOUNT_STATUS_OPTIONS: { value: AccountStatusMetric; label: string; fill: string }[] = [
+  { value: 'active', label: 'Active', fill: STATUS_COLORS.active },
+  { value: 'close', label: 'Close', fill: STATUS_COLORS.close },
+  { value: 'freezeKsei', label: 'Freeze KSEI', fill: STATUS_COLORS.freezeKsei },
+  { value: 'block', label: 'Block', fill: STATUS_COLORS.block },
+  { value: 'badDebt', label: 'Bad Debt', fill: STATUS_COLORS.badDebt },
+  { value: 'onboarding', label: 'Onboarding', fill: STATUS_COLORS.onboarding },
+];
+
 const TYPE_COLORS: Record<AccountType, string> = {
   Regular: '#2563eb',
   Margin: '#8b5cf6',
@@ -132,12 +141,18 @@ const TYPE_COLORS: Record<AccountType, string> = {
   'Day Trade': '#f97316',
 };
 
-const TYPE_OVERVIEW_LABELS: Record<TypeOverviewMetric, string> = {
-  totalAccounts: 'Total Accounts',
-  newAccounts: 'New Accounts',
-  active: 'Active Accounts',
-  dormant: 'Dormant Accounts',
-};
+const UNIQUE_TREND_SERIES: Array<{
+  tab: AccountTab;
+  dataKey: UniqueTrendSeriesKey;
+  label: string;
+  color: string;
+}> = [
+  { tab: 'All', dataKey: 'allAccountType', label: 'All Account Type', color: '#0f172a' },
+  { tab: 'Regular', dataKey: 'regular', label: 'Regular', color: TYPE_COLORS.Regular },
+  { tab: 'Margin', dataKey: 'margin', label: 'Margin', color: TYPE_COLORS.Margin },
+  { tab: 'Syariah', dataKey: 'syariah', label: 'Syariah', color: TYPE_COLORS.Syariah },
+  { tab: 'Day Trade', dataKey: 'dayTrade', label: 'Day Trade', color: TYPE_COLORS['Day Trade'] },
+];
 
 const UNIQUE_USER_RATIO: Record<AccountType, number> = {
   Regular: 0.89,
@@ -385,6 +400,14 @@ const formatLongDate = (dateKey: string) =>
 const formatShortDate = (dateKey: string) =>
   new Intl.DateTimeFormat('en-US', { day: '2-digit', month: 'short' }).format(parseDateKey(dateKey));
 
+const formatAcquisitionPeriod = (periodType: PeriodType, startKey: string, fallbackLabel: string) => {
+  const date = parseDateKey(startKey);
+  if (periodType === 'Daily') return `${date.getDate()} ${MONTHS[date.getMonth()].short} ${date.getFullYear()}`;
+  if (periodType === 'Monthly') return `${MONTHS[date.getMonth()].short} ${date.getFullYear()}`;
+  if (periodType === 'Quarterly') return `${fallbackLabel} ${date.getFullYear()}`;
+  return fallbackLabel;
+};
+
 const formatCompactNumber = (value: number) =>
   new Intl.NumberFormat('en-US', {
     notation: value >= 1000000 ? 'compact' : 'standard',
@@ -517,8 +540,19 @@ const getTargetForRange = (startKey: string, endKey: string) => {
   return target > 0 ? target : null;
 };
 
-const valueFromSummary = (summary: AccountSummary, metric: TypeOverviewMetric) => {
-  return summary[metric];
+const getAccountStatusValues = (summary: AccountSummary): Record<AccountStatusMetric, number> => {
+  const freezeKsei = Math.round(summary.dormant * 0.36);
+  const block = Math.round(summary.dormant * 0.24);
+  const badDebt = Math.round(summary.dormant * 0.18);
+
+  return {
+    active: summary.active,
+    close: summary.closed,
+    freezeKsei,
+    block,
+    badDebt,
+    onboarding: Math.max(0, summary.dormant - freezeKsei - block - badDebt),
+  };
 };
 
 const getTargetPaceForOffset = (startKey: string, endKey: string, elapsedDays: number) => {
@@ -661,21 +695,24 @@ const buildUniqueUserTrendData = (
   periodType: PeriodType,
   selection: ReturnType<typeof getPeriodSelection>,
   bucketOptions: Parameters<typeof buildPeriodBuckets>[2],
-  tab: AccountTab,
 ) => {
   const buckets = buildPeriodBuckets(periodType, selection, bucketOptions);
-  const data: Array<{
-    label: string;
-    selectedPeriodUniqueUsers: number | null;
-  }> = [];
+  const data: UniqueTrendPoint[] = [];
 
   buckets.forEach((bucket) => {
     const selectedEnd = clampEndToAvailable(bucket.endKey);
-    const selectedValue = bucket.startKey > LATEST_AVAILABLE_DATE ? null : estimatePeriodUniqueUsers(rows, bucket.startKey, selectedEnd, tab);
+    const seriesValues = Object.fromEntries(
+      UNIQUE_TREND_SERIES.map((series) => [
+        series.dataKey,
+        bucket.startKey > LATEST_AVAILABLE_DATE
+          ? null
+          : estimatePeriodUniqueUsers(rows, bucket.startKey, selectedEnd, series.tab),
+      ]),
+    ) as Record<UniqueTrendSeriesKey, number | null>;
 
     data.push({
       label: bucket.label,
-      selectedPeriodUniqueUsers: selectedValue,
+      ...seriesValues,
     });
   });
 
@@ -693,6 +730,7 @@ const buildTrendData = (
   const bucketsToRender = buildPeriodBuckets(periodType, selection, bucketOptions);
   const buckets: Array<{
     label: string;
+    acquisitionPeriod: string;
     newAccounts: number | null;
     closedAccounts: number | null;
     dormantAccounts: number | null;
@@ -712,7 +750,7 @@ const buildTrendData = (
     const selectedRows = isAvailable ? getPeriodRows(rows, bucket.startKey, selectedEndKey, tab) : [];
 
     const newAccounts = selectedSummary ? selectedRows.reduce((sum, row) => sum + row.newAccounts, 0) : null;
-    const closedAccounts = selectedSummary ? selectedRows.reduce((sum, row) => sum + row.closedAccounts, 0) : null;
+    const closedAccounts = selectedSummary ? -selectedRows.reduce((sum, row) => sum + row.closedAccounts, 0) : null;
     const dormantAccounts = selectedSummary ? selectedRows.reduce((sum, row) => sum + Math.max(1, Math.round(row.newAccounts * 0.07)), 0) : null;
     cumulativeNewAccounts += newAccounts ?? 0;
     if (selectedSummary) firstSelectedTotal ??= selectedSummary.totalAccounts;
@@ -722,10 +760,11 @@ const buildTrendData = (
 
     buckets.push({
       label: bucket.label,
+      acquisitionPeriod: formatAcquisitionPeriod(periodType, bucket.startKey, bucket.label),
       newAccounts,
       closedAccounts,
       dormantAccounts,
-      netGrowth: newAccounts !== null && closedAccounts !== null ? newAccounts - closedAccounts : null,
+      netGrowth: newAccounts !== null && closedAccounts !== null ? newAccounts + closedAccounts : null,
       cumulativeNewAccounts,
       cumulativeTargetPace: getTargetPaceForOffset(period.selectedStart, period.selectedEnd, elapsedDays),
       selectedIndex,
@@ -748,7 +787,7 @@ const AccountOverview: React.FC = () => {
   const [annualStartYear, setAnnualStartYear] = useState(2022);
   const [annualEndYear, setAnnualEndYear] = useState(2026);
   const [isTimeFilterOpen, setIsTimeFilterOpen] = useState(false);
-  const [typeMetric, setTypeMetric] = useState<TypeOverviewMetric>('totalAccounts');
+  const [selectedStatus, setSelectedStatus] = useState<AccountStatusMetric>('active');
   const showFirstDeposit = false;
 
   const periodSelection = getPeriodSelection({
@@ -790,28 +829,48 @@ const AccountOverview: React.FC = () => {
     () => summarizePeriod(accountData, normalizedStart, normalizedEnd, selectedTab),
     [normalizedStart, normalizedEnd, selectedTab],
   );
+  const periodStartSummary = summarizePeriod(accountData, normalizedStart, normalizedStart, selectedTab);
+  const accountTabTotals = ACCOUNT_TABS.map((tab) => ({
+    tab,
+    totalAccounts: summarizePeriod(accountData, normalizedStart, normalizedEnd, tab)?.totalAccounts ?? 0,
+  }));
 
   const trend = buildTrendData(accountData, periodType, periodSelection, bucketOptions, selectedTab);
-  const uniqueUserTrend = buildUniqueUserTrendData(accountData, periodType, periodSelection, bucketOptions, selectedTab);
-  const hasUniqueUserTrendData = uniqueUserTrend.data.some((point) => point.selectedPeriodUniqueUsers !== null);
-  const uniqueVisibleValues = uniqueUserTrend.data.flatMap((point) =>
-    [point.selectedPeriodUniqueUsers].filter((value): value is number => value !== null),
+  const newAccountGrowth = currentSummary && periodStartSummary
+    ? currentSummary.totalAccounts - periodStartSummary.totalAccounts
+    : null;
+  const newAccountGrowthPct = currentSummary && periodStartSummary
+    ? safeChangePct(currentSummary.totalAccounts, periodStartSummary.totalAccounts)
+    : null;
+  const peakAcquisition = trend.data.reduce<(typeof trend.data)[number] | null>((peak, point) => {
+    if (point.newAccounts === null) return peak;
+    if (!peak || peak.newAccounts === null || point.newAccounts > peak.newAccounts) return point;
+    return peak;
+  }, null);
+  const uniqueUserTrend = buildUniqueUserTrendData(accountData, periodType, periodSelection, bucketOptions);
+  const visibleUniqueSeries = selectedTab === 'All'
+    ? UNIQUE_TREND_SERIES
+    : UNIQUE_TREND_SERIES.filter((series) => series.tab === selectedTab);
+  const hasUniqueUserTrendData = uniqueUserTrend.data.some((point) =>
+    visibleUniqueSeries.some((series) => point[series.dataKey] !== null),
   );
-  const uniqueMinValue = uniqueVisibleValues.length > 0 ? Math.min(...uniqueVisibleValues) : 0;
+  const accountTypeBarSeries = UNIQUE_TREND_SERIES.filter((series) => series.tab !== 'All');
+  const uniqueVisibleValues = uniqueUserTrend.data.flatMap((point) => {
+    if (selectedTab !== 'All') {
+      return visibleUniqueSeries
+        .map((series) => point[series.dataKey])
+        .filter((value): value is number => value !== null);
+    }
+
+    const stackedAccountTypes = accountTypeBarSeries.reduce((sum, series) => sum + (point[series.dataKey] ?? 0), 0);
+    return [point.allAccountType, stackedAccountTypes].filter((value): value is number => value !== null);
+  });
   const uniqueMaxValue = uniqueVisibleValues.length > 0 ? Math.max(...uniqueVisibleValues) : 0;
-  const uniqueRange = Math.max(uniqueMaxValue - uniqueMinValue, 1);
-  const uniquePadding = Math.max(uniqueRange * 0.05, 1000);
+  const uniquePadding = Math.max(uniqueMaxValue * 0.05, 1000);
   const uniqueYAxisDomain: [number, number] = [
-    Math.max(0, Math.floor(uniqueMinValue - uniquePadding)),
+    0,
     Math.ceil(uniqueMaxValue + uniquePadding),
   ];
-  const uniqueSelectedSummary = (() => {
-    const points = uniqueUserTrend.data.filter((point) => point.selectedPeriodUniqueUsers !== null);
-    if (points.length === 0) return null;
-    const start = points[0].selectedPeriodUniqueUsers as number;
-    const end = points[points.length - 1].selectedPeriodUniqueUsers as number;
-    return { start, end, difference: end - start, growth: safeChangePct(end, start) };
-  })();
   const activeTradingUsersData = buildActiveTradingUsersData(selectedTab, periodType, periodSelection, bucketOptions);
   // TODO: When this uses an API, avoid fetching first-deposit detail while the section is hidden.
   const firstDepositMetrics = showFirstDeposit ? buildFirstDepositMetrics(selectedTab, normalizedStart, normalizedEnd) : null;
@@ -852,70 +911,25 @@ const AccountOverview: React.FC = () => {
         },
       ]
     : [];
-  const renderUniqueEndpointLabel = ({
-    x,
-    y,
-    value,
-    index,
-  }: {
-    x?: number | string;
-    y?: number | string;
-    value?: number | string;
-    index?: number;
-  }) => {
-    if (index !== 0 && index !== uniqueUserTrend.data.length - 1) return null;
-    if (value === undefined || value === null || x === undefined || y === undefined) return null;
-    const labelX = Number(x);
-    const labelY = Number(y) - 12;
-    const isLastPoint = index === uniqueUserTrend.data.length - 1;
-    return (
-      <text x={labelX} y={labelY} textAnchor={isLastPoint ? 'end' : 'start'} fill="#1d4ed8" fontSize={11} fontWeight={900}>
-        {formatCompactNumber(Number(value))}
-      </text>
-    );
-  };
-
   const typeOverviewData = ACCOUNT_TYPES.map((accountType) => {
     const summary = summarizePeriod(accountData, normalizedStart, normalizedEnd, accountType);
     return {
       name: accountType,
-      value: summary ? valueFromSummary(summary, typeMetric) : 0,
+      value: summary ? getAccountStatusValues(summary)[selectedStatus] : 0,
       fill: TYPE_COLORS[accountType],
     };
   });
+  const selectedStatusLabel = ACCOUNT_STATUS_OPTIONS.find((status) => status.value === selectedStatus)?.label ?? 'Accounts';
+  const typeOverviewTotal = typeOverviewData.reduce((sum, accountType) => sum + accountType.value, 0);
 
   const hasData = Boolean(currentSummary);
-  const isPositive = false;
-
-  const metricCards = currentSummary
-    ? [
-        {
-          label: 'Total Accounts',
-          value: formatNumber(currentSummary.totalAccounts),
-          change: null,
-          description: 'Total account base at period end',
-          icon: <UserGroupIcon className="w-5 h-5" />,
-          metric: 'totalAccounts' as keyof AccountSummary,
-        },
-      ]
-    : [];
 
   const statusComposition = currentSummary
-    ? (() => {
-        const freezeKsei = Math.round(currentSummary.dormant * 0.36);
-        const block = Math.round(currentSummary.dormant * 0.24);
-        const badDebt = Math.round(currentSummary.dormant * 0.18);
-        const onboarding = Math.max(0, currentSummary.dormant - freezeKsei - block - badDebt);
-
-        return [
-          { name: 'Active', value: currentSummary.active, fill: STATUS_COLORS.active },
-          { name: 'Close', value: currentSummary.closed, fill: STATUS_COLORS.close },
-          { name: 'Freeze KSEI', value: freezeKsei, fill: STATUS_COLORS.freezeKsei },
-          { name: 'Block', value: block, fill: STATUS_COLORS.block },
-          { name: 'Bad Debt', value: badDebt, fill: STATUS_COLORS.badDebt },
-          { name: 'Onboarding', value: onboarding, fill: STATUS_COLORS.onboarding },
-        ];
-      })()
+    ? ACCOUNT_STATUS_OPTIONS.map((status) => ({
+        name: status.label,
+        value: getAccountStatusValues(currentSummary)[status.value],
+        fill: status.fill,
+      }))
     : [];
 
   const accountOverviewBreakdownCharts = (
@@ -962,21 +976,22 @@ const AccountOverview: React.FC = () => {
         <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <h3 className="text-xl font-black text-slate-950">Account Type Overview</h3>
-            <div className="flex flex-wrap gap-2">
-              {(Object.keys(TYPE_OVERVIEW_LABELS) as TypeOverviewMetric[]).map((metric) => (
-                <button
-                  key={metric}
-                  onClick={() => setTypeMetric(metric)}
-                  className={`px-3 py-2 rounded-xl text-xs font-black transition-all ${
-                    typeMetric === metric ? 'bg-blue-600 text-white' : 'bg-gray-50 text-slate-500 hover:bg-gray-100'
-                  }`}
-                >
-                  {TYPE_OVERVIEW_LABELS[metric]}
-                </button>
-              ))}
-            </div>
+            <label className="flex items-center gap-2 text-xs font-black text-slate-500">
+              <span>Account Status</span>
+              <select
+                value={selectedStatus}
+                onChange={(event) => setSelectedStatus(event.target.value as AccountStatusMetric)}
+                className="min-w-[150px] rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-black text-slate-700 outline-none transition-colors hover:border-blue-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              >
+                {ACCOUNT_STATUS_OPTIONS.map((status) => (
+                  <option key={status.value} value={status.value}>
+                    {status.label}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
-          <div className="h-[340px] mt-4">
+          <div className="h-[340px] mt-4 relative">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
@@ -995,6 +1010,12 @@ const AccountOverview: React.FC = () => {
                 <Legend verticalAlign="bottom" iconType="circle" wrapperStyle={{ fontSize: 12, fontWeight: 800 }} />
               </PieChart>
             </ResponsiveContainer>
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="text-center">
+                <p className="text-[10px] font-black tracking-[0.18em] uppercase text-gray-400">Total {selectedStatusLabel}</p>
+                <p className="text-2xl font-black text-slate-950">{formatCompactNumber(typeOverviewTotal)}</p>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -1137,17 +1158,20 @@ const AccountOverview: React.FC = () => {
         </div>
       </header>
 
-      <div>
-        <div className="flex flex-wrap gap-2 bg-white border border-gray-200 rounded-2xl p-2 shadow-sm w-fit">
-          {ACCOUNT_TABS.map((tab) => (
+      <div className="overflow-x-auto">
+        <div className="grid min-w-[720px] grid-cols-5 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+          {accountTabTotals.map(({ tab, totalAccounts }, index) => (
             <button
               key={tab}
               onClick={() => setSelectedTab(tab)}
-              className={`px-4 py-2 rounded-xl text-sm font-black transition-all ${
+              className={`min-h-[64px] border-r border-gray-200 px-4 py-3 text-center transition-all last:border-r-0 ${
                 selectedTab === tab ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:bg-gray-50'
               }`}
             >
-              {tab}
+              <span className="block text-xs font-black">{index === 0 ? 'All Account Type' : tab}</span>
+              <span className={`mt-1 block text-sm font-black ${selectedTab === tab ? 'text-white' : 'text-slate-700'}`}>
+                {formatNumber(totalAccounts)}
+              </span>
             </button>
           ))}
         </div>
@@ -1160,31 +1184,90 @@ const AccountOverview: React.FC = () => {
         </div>
       ) : (
         <>
-          <section className="grid grid-cols-1 gap-4">
-            {metricCards.map((card) => (
-                <div
-                  key={card.label}
-                  title={`Selected filter: ${periodSelection.summaryLabel}\nValue: ${card.value}`}
-                  className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 min-h-[164px]"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <p className="text-[10px] font-black tracking-[0.18em] uppercase text-gray-400">{card.label}</p>
-                    <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">{card.icon}</div>
-                  </div>
-                  <p className="text-2xl font-black text-slate-950 mt-5">{card.value}</p>
-                  <div className="mt-2 flex items-center gap-2">
-                    <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-black text-blue-600">{periodType}</span>
-                    <span className="hidden">
-                      {card.change === null ? 'N/A' : `${isPositive ? '↗' : '↘'} ${formatPercent(card.change)}`}
-                    </span>
-                    <span className="text-[11px] font-semibold text-gray-400">{periodSelection.summaryLabel}</span>
-                  </div>
-                  <p className="text-xs font-semibold text-slate-500 mt-3 leading-relaxed">{card.description}</p>
-                </div>
-              ))}
+          <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="min-h-[132px] rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+              <p className="text-sm font-black text-slate-600">New Account Growth</p>
+              <p className="mt-5 text-2xl font-black text-slate-950">
+                {newAccountGrowth === null ? 'N/A' : `${newAccountGrowth > 0 ? '+' : ''}${formatNumber(newAccountGrowth)}`}
+              </p>
+              <p className="mt-1 text-xs font-semibold text-slate-500">
+                {newAccountGrowthPct === null ? 'N/A' : formatPercent(newAccountGrowthPct)} vs period start
+              </p>
+            </div>
+            <div className="min-h-[132px] rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+              <p className="text-sm font-black text-slate-600">Peak Acquisition</p>
+              <p className="mt-5 text-2xl font-black text-slate-950">
+                {peakAcquisition?.acquisitionPeriod ?? 'N/A'}
+              </p>
+              <p className="mt-1 text-xs font-semibold text-slate-500">
+                {peakAcquisition?.newAccounts === null || peakAcquisition?.newAccounts === undefined
+                  ? 'N/A'
+                  : `${peakAcquisition.newAccounts > 0 ? '+' : ''}${formatNumber(peakAcquisition.newAccounts)} new accounts`}
+              </p>
+            </div>
           </section>
 
           {accountOverviewBreakdownCharts}
+
+          <section className="bg-white rounded-3xl border border-gray-100 shadow-sm p-6">
+            <div className="flex flex-col xl:flex-row xl:items-start justify-between gap-4 mb-5">
+              <div>
+                <h3 className="text-xl font-black text-slate-950">Active Trading Accounts</h3>
+                <p className="text-xs font-semibold text-slate-500 mt-2 max-w-3xl">
+                  Unique accounts who completed at least one transaction
+                </p>
+              </div>
+              <span className="rounded-2xl bg-blue-50 px-4 py-2 text-xs font-black text-blue-600">
+                {periodType} view
+              </span>
+            </div>
+
+            {activeTradingUsersData.length === 0 ? (
+              <div className="h-[260px] flex flex-col items-center justify-center rounded-2xl bg-gray-50 text-center">
+                <p className="text-lg font-black text-slate-900">No data available for the selected time filter.</p>
+                <p className="text-sm font-semibold text-slate-500 mt-2">Try selecting another frequency or time range.</p>
+              </div>
+            ) : (
+              <div className="h-[340px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={activeTradingUsersData} margin={{ top: 20, right: 28, left: 8, bottom: 10 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eef2f7" />
+                    <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: '#8090aa', fontSize: 11, fontWeight: 700 }} />
+                    <YAxis
+                      tickLine={false}
+                      axisLine={false}
+                      tick={{ fill: '#8090aa', fontSize: 11, fontWeight: 700 }}
+                      tickFormatter={formatCompactNumber}
+                    />
+                    <Tooltip
+                      content={({ active, payload, label }) => {
+                        if (!active || !payload?.length) return null;
+                        const users = Number(payload[0]?.value ?? 0);
+                        return (
+                          <div className="rounded-2xl bg-white p-4 shadow-xl border border-gray-100 min-w-[250px]">
+                            <p className="text-sm font-black text-slate-900 mb-3">{label}</p>
+                            <div className="flex justify-between gap-6 text-xs font-bold">
+                              <span className="text-blue-600">Active Trading Accounts</span>
+                              <span>{formatNumber(users)} accounts</span>
+                            </div>
+                          </div>
+                        );
+                      }}
+                    />
+                    <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: 12, fontWeight: 800 }} />
+                    <Line
+                      type="monotone"
+                      dataKey="activeTradingUsers"
+                      name="Active Trading Accounts"
+                      stroke="#2563eb"
+                      strokeWidth={3}
+                      dot={{ r: 4, strokeWidth: 2 }}
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </section>
 
           <section className="bg-white rounded-3xl border border-gray-100 shadow-sm p-6">
             <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 mb-5">
@@ -1227,7 +1310,7 @@ const AccountOverview: React.FC = () => {
                     />
                     <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: 12, fontWeight: 800 }} />
                     <Bar dataKey="newAccounts" name="New Accounts" fill="#2563eb" radius={[8, 8, 0, 0]} barSize={26} />
-                    <Bar dataKey="closedAccounts" name="Closed Accounts" fill="#f97316" radius={[8, 8, 0, 0]} barSize={26} />
+                    <Bar dataKey="closedAccounts" name="Closed Accounts" fill="#f97316" radius={[0, 0, 8, 8]} barSize={26} />
                     <Line type="monotone" dataKey="netGrowth" name="Net Account Growth" stroke="#10b981" strokeWidth={3} dot={{ r: 4 }} />
                   </ComposedChart>
                 </ResponsiveContainer>
@@ -1237,7 +1320,7 @@ const AccountOverview: React.FC = () => {
 
           <section className="bg-white rounded-3xl border border-gray-100 shadow-sm p-6">
             <div className="mb-5">
-              <h3 className="text-xl font-black text-slate-950">Cumulative Unique Users Trend</h3>
+              <h3 className="text-xl font-black text-slate-950">Cumulative Accounts Trend</h3>
               <p className="text-xs font-semibold text-slate-500 mt-2 max-w-2xl">
                 Cumulative Unique Users counts each user once, even if the user owns multiple account types.
               </p>
@@ -1248,28 +1331,9 @@ const AccountOverview: React.FC = () => {
                 <p className="text-sm font-semibold text-slate-500 mt-2">Try selecting another frequency or time range.</p>
               </div>
             ) : (
-              <>
-                {uniqueSelectedSummary && (
-                  <div className="rounded-2xl border border-blue-100 bg-blue-50/60 px-4 py-3 mb-5">
-                    <p className="text-[10px] font-black tracking-[0.18em] uppercase text-blue-500">Selected Period Growth</p>
-                    <p className="mt-2 text-sm font-black text-slate-900">
-                      {formatNumber(uniqueSelectedSummary.start)} {'->'} {formatNumber(uniqueSelectedSummary.end)}
-                    </p>
-                    <p className="mt-1 text-xs font-bold text-blue-700">
-                      {uniqueSelectedSummary.difference > 0 ? '+' : ''}{formatNumber(uniqueSelectedSummary.difference)} users
-                      <span className="ml-2">{formatPercent(uniqueSelectedSummary.growth)}</span>
-                    </p>
-                  </div>
-                )}
-                <div className="h-[360px]">
+              <div className="h-[400px]">
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={uniqueUserTrend.data} margin={{ top: 28, right: 34, left: 8, bottom: 10 }}>
-                      <defs>
-                        <linearGradient id="selectedUniqueUsers" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#2563eb" stopOpacity={0.28} />
-                          <stop offset="95%" stopColor="#2563eb" stopOpacity={0.04} />
-                        </linearGradient>
-                      </defs>
+                    <ComposedChart data={uniqueUserTrend.data} margin={{ top: 28, right: 34, left: 8, bottom: 10 }} barCategoryGap="22%">
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eef2f7" />
                       <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: '#8090aa', fontSize: 11, fontWeight: 700 }} />
                       <YAxis
@@ -1282,95 +1346,65 @@ const AccountOverview: React.FC = () => {
                       <Tooltip
                         content={({ active, payload, label }) => {
                           if (!active || !payload?.length) return null;
-                          const selectedValue = payload[0]?.payload?.selectedPeriodUniqueUsers as number | null;
+                          const point = payload[0]?.payload as UniqueTrendPoint | undefined;
+                          if (!point) return null;
                           return (
                             <div className="rounded-2xl bg-white p-4 shadow-xl border border-gray-100 min-w-[250px]">
-                              <p className="text-sm font-black text-slate-900 mb-3">Date: {label}</p>
-                              <div className="flex justify-between gap-6 text-xs font-bold">
-                                <span className="text-blue-600">Unique Users</span>
-                                <span>{selectedValue === null ? 'N/A' : `${formatNumber(selectedValue)} unique users`}</span>
+                              <p className="text-sm font-black text-slate-900 mb-3">{label}</p>
+                              <div className="space-y-2">
+                                {visibleUniqueSeries.map((series) => {
+                                  const value = point[series.dataKey];
+                                  return (
+                                    <div key={series.dataKey} className="flex justify-between gap-6 text-xs font-bold">
+                                      <span style={{ color: series.color }}>{series.label}</span>
+                                      <span className="text-slate-900">{value === null ? 'N/A' : formatNumber(value)}</span>
+                                    </div>
+                                  );
+                                })}
                               </div>
                             </div>
                           );
                         }}
                       />
                       <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: 12, fontWeight: 800 }} />
-                      <Area
-                        type="monotone"
-                        dataKey="selectedPeriodUniqueUsers"
-                        name="Selected Period"
-                        stroke="#2563eb"
-                        strokeWidth={3}
-                        fill="url(#selectedUniqueUsers)"
-                        dot={{ r: 4, strokeWidth: 2 }}
-                        connectNulls
-                      >
-                        <LabelList content={renderUniqueEndpointLabel} />
-                      </Area>
-                    </AreaChart>
+                      {selectedTab === 'All' ? (
+                        <>
+                          {accountTypeBarSeries.map((series, index) => (
+                            <Bar
+                              key={series.dataKey}
+                              dataKey={series.dataKey}
+                              name={series.label}
+                              fill={series.color}
+                              stackId="accountTypes"
+                              maxBarSize={48}
+                              radius={index === accountTypeBarSeries.length - 1 ? [6, 6, 0, 0] : 0}
+                            />
+                          ))}
+                          <Line
+                            type="monotone"
+                            dataKey="allAccountType"
+                            name="All Account Type"
+                            stroke={UNIQUE_TREND_SERIES[0].color}
+                            strokeWidth={3}
+                            dot={{ r: 4, strokeWidth: 2, fill: '#ffffff' }}
+                            activeDot={{ r: 6 }}
+                            connectNulls
+                          />
+                        </>
+                      ) : (
+                        visibleUniqueSeries.map((series) => (
+                          <Bar
+                            key={series.dataKey}
+                            dataKey={series.dataKey}
+                            name={series.label}
+                            fill={series.color}
+                            maxBarSize={56}
+                            radius={[8, 8, 0, 0]}
+                          />
+                        ))
+                      )}
+                    </ComposedChart>
                   </ResponsiveContainer>
-                </div>
-                <p className="mt-2 text-[11px] font-bold text-slate-400">Y-axis is zoomed to highlight movement.</p>
-              </>
-            )}
-          </section>
-
-          <section className="bg-white rounded-3xl border border-gray-100 shadow-sm p-6">
-            <div className="flex flex-col xl:flex-row xl:items-start justify-between gap-4 mb-5">
-              <div>
-                <h3 className="text-xl font-black text-slate-950">Active Trading Users</h3>
-                <p className="text-xs font-semibold text-slate-500 mt-2 max-w-3xl">
-                  Unique users who completed at least one buy or sell equity transaction in M-STOCK.
-                </p>
-              </div>
-              <span className="rounded-2xl bg-blue-50 px-4 py-2 text-xs font-black text-blue-600">
-                {periodType} view
-              </span>
-            </div>
-
-            {activeTradingUsersData.length === 0 ? (
-              <div className="h-[260px] flex flex-col items-center justify-center rounded-2xl bg-gray-50 text-center">
-                <p className="text-lg font-black text-slate-900">No data available for the selected time filter.</p>
-                <p className="text-sm font-semibold text-slate-500 mt-2">Try selecting another frequency or time range.</p>
-              </div>
-            ) : (
-              <div className="h-[340px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={activeTradingUsersData} margin={{ top: 20, right: 28, left: 8, bottom: 10 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eef2f7" />
-                    <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: '#8090aa', fontSize: 11, fontWeight: 700 }} />
-                    <YAxis
-                      tickLine={false}
-                      axisLine={false}
-                      tick={{ fill: '#8090aa', fontSize: 11, fontWeight: 700 }}
-                      tickFormatter={formatCompactNumber}
-                    />
-                    <Tooltip
-                      content={({ active, payload, label }) => {
-                        if (!active || !payload?.length) return null;
-                        const users = Number(payload[0]?.value ?? 0);
-                        return (
-                          <div className="rounded-2xl bg-white p-4 shadow-xl border border-gray-100 min-w-[250px]">
-                            <p className="text-sm font-black text-slate-900 mb-3">{label}</p>
-                            <div className="flex justify-between gap-6 text-xs font-bold">
-                              <span className="text-blue-600">Active Trading Users</span>
-                              <span>{formatNumber(users)} users</span>
-                            </div>
-                          </div>
-                        );
-                      }}
-                    />
-                    <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: 12, fontWeight: 800 }} />
-                    <Line
-                      type="monotone"
-                      dataKey="activeTradingUsers"
-                      name="Active Trading Users"
-                      stroke="#2563eb"
-                      strokeWidth={3}
-                      dot={{ r: 4, strokeWidth: 2 }}
-                    />
-                  </ComposedChart>
-                </ResponsiveContainer>
               </div>
             )}
           </section>

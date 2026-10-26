@@ -5,6 +5,7 @@ import {
   CartesianGrid,
   ComposedChart,
   Line,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -12,11 +13,14 @@ import {
 } from 'recharts';
 import { ArrowLeftIcon, CalendarIcon, ChevronDownIcon } from '../components/Icons';
 import { formatCurrency } from '../components/Shared';
+import { addValueDatasets } from '../constants/productBreakdownData';
 import type {
   BreakdownChart,
   BreakdownDataPoint,
   BreakdownPageConfig,
   BreakdownSeries,
+  ChartValueTab,
+  ProductChartProduct,
   ProductBreakdownKey,
 } from '../constants/productBreakdownData';
 
@@ -43,6 +47,22 @@ type FilterState = {
 };
 
 type TimeGranularity = 'monthly' | 'quarterly' | 'annual';
+
+type ResolvedChartData = {
+  data: BreakdownDataPoint[];
+  granularity: TimeGranularity;
+};
+
+const VALUE_TABS: { label: string; value: ChartValueTab }[] = [
+  { label: 'Transaction Value', value: 'transactionValue' },
+  { label: 'Asset Value', value: 'assetValue' },
+];
+
+const PRODUCT_ROUTE_NAMES: Record<ProductBreakdownKey, ProductChartProduct> = {
+  equity: 'equity',
+  mutualFund: 'mutual-fund',
+  bonds: 'bonds',
+};
 
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
 const QUARTER_LABELS = ['Q1', 'Q2', 'Q3', 'Q4'] as const;
@@ -96,6 +116,14 @@ const formatPageSubtitle = (mode: FilterMode, filterState: FilterState) => {
 
 const formatBreakdownAmount = (value: number) =>
   formatCurrency(value * 1e9);
+
+const formatCompactBillions = (value: number) => {
+  if (Math.abs(value) >= 1000) {
+    return `${Number((value / 1000).toFixed(1))}T`;
+  }
+
+  return `${Number(value.toFixed(0))}B`;
+};
 
 const branchPerformanceSeries: BreakdownSeries[] = [
   { key: 'InvestmentSpecialist', name: 'Investment Specialist', color: '#2563eb' },
@@ -206,7 +234,8 @@ const branchPerformanceCharts: Record<ProductBreakdownKey, BreakdownChart> = {
   },
 };
 
-const createBranchChart = (productKey: ProductBreakdownKey) => branchPerformanceCharts[productKey];
+const createBranchChart = (productKey: ProductBreakdownKey) =>
+  addValueDatasets(branchPerformanceCharts[productKey], productKey);
 
 const injectBranchChart = (charts: BreakdownChart[], productKey: ProductBreakdownKey) => {
   const branchChart = createBranchChart(productKey);
@@ -252,18 +281,45 @@ const scaleStackedPoint = (chart: BreakdownChart, point: BreakdownDataPoint, yea
   return nextPoint;
 };
 
+const OUTFLOW_SERIES_KEYS = new Set(['Redeem', 'Sell']);
+
+const applySignedFlowMetrics = (chart: BreakdownChart, point: BreakdownDataPoint) => {
+  const barSeries = chart.series.filter((series) => series.kind !== 'line');
+  const outflowSeries = barSeries.find((series) => OUTFLOW_SERIES_KEYS.has(series.key));
+  const inflowSeries = barSeries.find((series) => series.key !== outflowSeries?.key);
+
+  if (!outflowSeries || !inflowSeries) return point;
+
+  const outflow = -Math.abs(Number(point[outflowSeries.key] ?? 0));
+  const inflow = Number(point[inflowSeries.key] ?? 0);
+  point[outflowSeries.key] = outflow;
+  point.Nett = Number((inflow + outflow).toFixed(1));
+
+  return point;
+};
+
 const scaleBuySellPoint = (chart: BreakdownChart, point: BreakdownDataPoint, year: number, monthIndex: number) => {
-  const yearOffset = year - CURRENT_YEAR;
   const amountFactor = getYearAmountFactor(year) * (1 + (((monthIndex % 3) - 1) * 0.03));
   const nextPoint: BreakdownDataPoint = { label: point.label };
 
   chart.series.forEach((series, index) => {
     const baseValue = Number(point[series.key] ?? 0);
-    if (series.kind === 'line') {
-      nextPoint[series.key] = Number((baseValue + yearOffset * 0.7 + (((monthIndex + index) % 5) - 2) * 0.4).toFixed(1));
-    } else {
+    if (series.kind !== 'line') {
       nextPoint[series.key] = Number((baseValue * amountFactor * (1 + index * 0.02)).toFixed(1));
     }
+  });
+
+  return applySignedFlowMetrics(chart, nextPoint);
+};
+
+const scaleAssetValuePoint = (chart: BreakdownChart, point: BreakdownDataPoint, year: number, monthIndex: number) => {
+  const yearFactor = 0.86 + (year - 2022) * 0.035;
+  const monthDrift = 1 + (((monthIndex % 4) - 1.5) * 0.004);
+  const nextPoint: BreakdownDataPoint = { label: point.label };
+
+  chart.series.forEach((series) => {
+    const baseValue = Number(point[series.key] ?? 0);
+    nextPoint[series.key] = Number((baseValue * yearFactor * (series.kind === 'line' ? 1 : monthDrift)).toFixed(1));
   });
 
   return nextPoint;
@@ -273,6 +329,8 @@ const buildScaledMonthlyData = (chart: BreakdownChart, year: number) =>
   chart.data12m.map((point, monthIndex) =>
     chart.chartType === 'buy-sell-trend'
       ? scaleBuySellPoint(chart, point, year, monthIndex)
+      : chart.chartType === 'asset-value-trend'
+        ? scaleAssetValuePoint(chart, point, year, monthIndex)
       : scaleStackedPoint(chart, point, year, monthIndex),
   );
 
@@ -283,14 +341,26 @@ const aggregateQuarterData = (chart: BreakdownChart, data: BreakdownDataPoint[])
 
     if (chart.chartType === 'buy-sell-trend') {
       chart.series.forEach((series) => {
-        if (series.kind === 'line') {
-          point[series.key] = Number(
-            (chunk.reduce((sum, item) => sum + Number(item[series.key] ?? 0), 0) / Math.max(chunk.length, 1)).toFixed(1),
-          );
-        } else {
+        if (series.kind !== 'line') {
           point[series.key] = Number(chunk.reduce((sum, item) => sum + Number(item[series.key] ?? 0), 0).toFixed(1));
         }
       });
+      return applySignedFlowMetrics(chart, point);
+    }
+
+    if (chart.chartType === 'asset-value-trend') {
+      const barSeries = chart.series.find((series) => series.kind !== 'line');
+      const lineSeries = chart.series.find((series) => series.kind === 'line');
+      const latestPoint = chunk[chunk.length - 1];
+
+      if (barSeries) {
+        point[barSeries.key] = Number(latestPoint?.[barSeries.key] ?? 0);
+      }
+      if (lineSeries) {
+        point[lineSeries.key] = Number(
+          chunk.reduce((sum, item) => sum + Number(item[lineSeries.key] ?? 0), 0).toFixed(1),
+        );
+      }
       return point;
     }
 
@@ -310,14 +380,26 @@ const aggregateAnnualPoint = (chart: BreakdownChart, data: BreakdownDataPoint[],
 
   if (chart.chartType === 'buy-sell-trend') {
     chart.series.forEach((series) => {
-      if (series.kind === 'line') {
-        point[series.key] = Number(
-          (data.reduce((sum, item) => sum + Number(item[series.key] ?? 0), 0) / Math.max(data.length, 1)).toFixed(1),
-        );
-      } else {
+      if (series.kind !== 'line') {
         point[series.key] = Number(data.reduce((sum, item) => sum + Number(item[series.key] ?? 0), 0).toFixed(1));
       }
     });
+    return applySignedFlowMetrics(chart, point);
+  }
+
+  if (chart.chartType === 'asset-value-trend') {
+    const barSeries = chart.series.find((series) => series.kind !== 'line');
+    const lineSeries = chart.series.find((series) => series.kind === 'line');
+    const latestPoint = data[data.length - 1];
+
+    if (barSeries) {
+      point[barSeries.key] = Number(latestPoint?.[barSeries.key] ?? 0);
+    }
+    if (lineSeries) {
+      point[lineSeries.key] = Number(
+        data.reduce((sum, item) => sum + Number(item[lineSeries.key] ?? 0), 0).toFixed(1),
+      );
+    }
     return point;
   }
 
@@ -356,6 +438,79 @@ const resolveChartData = (chart: BreakdownChart, mode: FilterMode, filterState: 
   return {
     data: annualData,
     granularity: 'annual' as TimeGranularity,
+  };
+};
+
+const getMetricChartConfiguration = (chart: BreakdownChart, activeTab: ChartValueTab): BreakdownChart => {
+  const dataset = chart.valueDatasets?.[activeTab];
+  if (!dataset) return chart;
+
+  return {
+    ...chart,
+    series: dataset.series ?? chart.series,
+    chartType: dataset.chartType ?? chart.chartType,
+  };
+};
+
+const resolveValueChartData = (
+  chart: BreakdownChart,
+  activeTab: ChartValueTab,
+  mode: FilterMode,
+  filterState: FilterState,
+): ResolvedChartData | null => {
+  const dataset = chart.valueDatasets?.[activeTab];
+  if (!dataset) return null;
+  const metricChart = getMetricChartConfiguration(chart, activeTab);
+
+  return resolveChartData(
+    {
+      ...metricChart,
+      data30d: dataset.data30d,
+      data12m: dataset.data12m,
+    },
+    mode,
+    filterState,
+  );
+};
+
+const useChartValueData = ({
+  chart,
+  activeTab,
+  product,
+  timePeriod,
+  filterMode,
+  filterState,
+}: {
+  chart: BreakdownChart;
+  activeTab: ChartValueTab;
+  product: ProductChartProduct;
+  timePeriod: string;
+  filterMode: FilterMode;
+  filterState: FilterState;
+}) => {
+  const requestKey = `${product}:${activeTab}:${timePeriod}`;
+  const resolvedData = useMemo(
+    () => resolveValueChartData(chart, activeTab, filterMode, filterState),
+    [chart, activeTab, filterMode, filterState],
+  );
+  const [loadedResult, setLoadedResult] = useState<{
+    requestKey: string;
+    result: ResolvedChartData | null;
+  }>(() => ({ requestKey, result: resolvedData }));
+
+  useEffect(() => {
+    if (loadedResult.requestKey === requestKey) return;
+
+    const timeoutId = window.setTimeout(() => {
+      setLoadedResult({ requestKey, result: resolvedData });
+    }, 180);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [loadedResult.requestKey, requestKey, resolvedData]);
+
+  return {
+    isLoading: loadedResult.requestKey !== requestKey,
+    result: loadedResult.requestKey === requestKey ? loadedResult.result : null,
   };
 };
 
@@ -411,7 +566,9 @@ const MixedTrendTooltip: React.FC<any> = ({ active, payload, label }) => {
       <div className="space-y-2">
         {orderedPayload.map((item: any) => {
           const isLine = item.dataKey === 'Nett' || item.dataKey === 'TrendChange';
-          const valueLabel = formatCurrency(Number(item.value) * 1e9);
+          const value = Number(item.value) * 1e9;
+          const absoluteValueLabel = formatCurrency(Math.abs(value));
+          const valueLabel = value < 0 ? absoluteValueLabel.replace(/^IDR /, 'IDR -') : absoluteValueLabel;
 
           return (
             <div key={item.dataKey} className="flex items-center justify-between gap-5">
@@ -483,7 +640,12 @@ const BuySellTrendChart: React.FC<{
   return (
     <div className="h-[360px] w-full">
       <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={data} margin={{ top: 18, right: 18, left: 0, bottom: 20 }} barCategoryGap={granularity === 'monthly' ? '28%' : '34%'}>
+        <ComposedChart
+          data={data}
+          margin={{ top: 18, right: 18, left: 0, bottom: 20 }}
+          barCategoryGap={granularity === 'monthly' ? '28%' : '34%'}
+          stackOffset="sign"
+        >
           <CartesianGrid stroke="#eef2f7" strokeDasharray="3 3" vertical={false} />
           <XAxis
             dataKey="label"
@@ -498,18 +660,22 @@ const BuySellTrendChart: React.FC<{
             axisLine={false}
             tickLine={false}
             tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 700 }}
-            tickFormatter={(value) => `${value}B`}
+            tickFormatter={formatCompactBillions}
           />
+          <ReferenceLine yAxisId="amount" y={0} stroke="#64748b" strokeWidth={1.5} />
           <YAxis
             yAxisId="trend"
             orientation="right"
             axisLine={false}
             tickLine={false}
             tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 700 }}
-            tickFormatter={(value) => `${value}B`}
+            tickFormatter={formatCompactBillions}
           />
+          {chart.chartType === 'asset-value-trend' ? (
+            <ReferenceLine yAxisId="trend" y={0} stroke="#94a3b8" strokeDasharray="4 4" strokeWidth={1.25} />
+          ) : null}
           <Tooltip content={<MixedTrendTooltip />} cursor={{ fill: '#f8fafc' }} />
-          {barSeries.map((series, index) => (
+          {barSeries.map((series) => (
             <Bar
               key={series.key}
               yAxisId="amount"
@@ -517,7 +683,7 @@ const BuySellTrendChart: React.FC<{
               name={series.name}
               fill={series.color}
               stackId="aumFlow"
-              radius={index === barSeries.length - 1 ? [6, 6, 0, 0] : [0, 0, 0, 0]}
+              radius={OUTFLOW_SERIES_KEYS.has(series.key) ? [0, 0, 6, 6] : [6, 6, 0, 0]}
             />
           ))}
           {lineSeries.map((series) => (
@@ -536,6 +702,191 @@ const BuySellTrendChart: React.FC<{
         </ComposedChart>
       </ResponsiveContainer>
     </div>
+  );
+};
+
+export type ChartTabToggleProps = {
+  tabs: { label: string; value: ChartValueTab }[];
+  activeTab: ChartValueTab;
+  onChange: (value: ChartValueTab) => void;
+};
+
+export const ChartTabToggle: React.FC<ChartTabToggleProps> = ({ tabs, activeTab, onChange }) => (
+  <div
+    role="tablist"
+    aria-label="Chart value type"
+    className="inline-flex shrink-0 overflow-hidden rounded-[6px] border border-[#E0E0E0] bg-white"
+  >
+    {tabs.map((tab) => {
+      const isActive = activeTab === tab.value;
+      return (
+        <button
+          key={tab.value}
+          type="button"
+          role="tab"
+          aria-selected={isActive}
+          onClick={() => onChange(tab.value)}
+          className={`px-4 py-1.5 text-[13px] font-semibold transition-all duration-150 ease-out ${
+            isActive ? 'bg-[#2563EB] text-white' : 'bg-transparent text-[#666666] hover:bg-slate-50'
+          }`}
+        >
+          {tab.label}
+        </button>
+      );
+    })}
+  </div>
+);
+
+const ChartLoadingSkeleton = () => (
+  <div className="relative h-[360px] w-full overflow-hidden rounded-xl bg-slate-50/70" aria-label="Loading chart data">
+    <div className="absolute inset-x-8 bottom-10 top-8 flex items-end justify-around gap-3 border-b border-l border-slate-200 px-5 pb-px animate-pulse">
+      {[42, 66, 54, 78, 61, 72, 49, 82].map((height, index) => (
+        <div key={`${height}-${index}`} className="flex h-full flex-1 items-end gap-1.5">
+          <div className="w-1/2 rounded-t bg-slate-200" style={{ height: `${height}%` }} />
+          <div className="w-1/2 rounded-t bg-slate-300/70" style={{ height: `${Math.max(24, height - 18)}%` }} />
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+const ChartDataBoundary: React.FC<{
+  activeTab: ChartValueTab;
+  isLoading: boolean;
+  result: ResolvedChartData | null;
+  children: (result: ResolvedChartData) => React.ReactNode;
+}> = ({ activeTab, isLoading, result, children }) => {
+  if (isLoading) return <ChartLoadingSkeleton />;
+
+  if (!result || result.data.length === 0) {
+    return (
+      <div className="flex h-[360px] w-full items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-6 text-center">
+        <div>
+          <p className="text-sm font-bold text-slate-700">
+            {activeTab === 'assetValue' ? 'Asset value data not available for this period' : 'Transaction value data not available for this period'}
+          </p>
+          <p className="mt-1 text-sm font-semibold text-slate-400">Try adjusting the time filter</p>
+        </div>
+      </div>
+    );
+  }
+
+  return <>{children(result)}</>;
+};
+
+type SharedValueChartProps = {
+  activeTab: ChartValueTab;
+  product: ProductChartProduct;
+  timePeriod: string;
+  chart: BreakdownChart;
+  filterMode: FilterMode;
+  filterState: FilterState;
+};
+
+export const TransactionTrendChart: React.FC<SharedValueChartProps> = (props) => {
+  const { isLoading, result } = useChartValueData(props);
+
+  return (
+    <ChartDataBoundary activeTab={props.activeTab} isLoading={isLoading} result={result}>
+      {(resolved) => (
+        <BuySellTrendChart chart={props.chart} data={resolved.data} granularity={resolved.granularity} />
+      )}
+    </ChartDataBoundary>
+  );
+};
+
+export const ByClientSegmentChart: React.FC<SharedValueChartProps> = (props) => {
+  const { isLoading, result } = useChartValueData(props);
+
+  return (
+    <ChartDataBoundary activeTab={props.activeTab} isLoading={isLoading} result={result}>
+      {(resolved) => (
+        <StackedBarChart chart={props.chart} data={resolved.data} granularity={resolved.granularity} />
+      )}
+    </ChartDataBoundary>
+  );
+};
+
+const getMetricChartCopy = (chart: BreakdownChart, activeTab: ChartValueTab) => {
+  if (chart.chartType === 'buy-sell-trend') {
+    return activeTab === 'transactionValue'
+      ? { title: 'Transaction Trend', subtitle: 'Buy and sell activity with nett amount' }
+      : { title: 'Asset Value Trend', subtitle: 'Total asset value with nett movement' };
+  }
+
+  if (chart.title === 'By Client Segment') {
+    return activeTab === 'transactionValue'
+      ? { title: chart.title, subtitle: 'Trading value share by Client Segment' }
+      : { title: chart.title, subtitle: 'Asset value share by Client Segment' };
+  }
+
+  if (chart.title === 'By Branch Performance') {
+    return activeTab === 'transactionValue'
+      ? { title: chart.title, subtitle: 'Transaction value share by branch channel' }
+      : { title: chart.title, subtitle: 'Asset value share by branch channel' };
+  }
+
+  if (activeTab === 'transactionValue') {
+    return { title: chart.title, subtitle: chart.subtitle };
+  }
+
+  return {
+    title: chart.title,
+    subtitle: chart.subtitle
+      .replace(/^Trading value share/i, 'Asset value share')
+      .replace(/^Subscription share/i, 'Asset value share')
+      .replace(/^Volume share/i, 'Asset value share')
+      .replace(/^AUM share/i, 'Asset value share'),
+  };
+};
+
+const MetricBreakdownChartCard: React.FC<{
+  chart: BreakdownChart;
+  activeTab: ChartValueTab;
+  product: ProductChartProduct;
+  timePeriod: string;
+  filterMode: FilterMode;
+  filterState: FilterState;
+}> = ({ chart, activeTab, product, timePeriod, filterMode, filterState }) => {
+  const isTransactionTrend = chart.chartType === 'buy-sell-trend';
+  const metricChart = getMetricChartConfiguration(chart, activeTab);
+  const copy = getMetricChartCopy(chart, activeTab);
+  const sharedProps: SharedValueChartProps = {
+    activeTab,
+    product,
+    timePeriod,
+    chart: metricChart,
+    filterMode,
+    filterState,
+  };
+
+  return (
+    <section className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm sm:p-8">
+      <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h2 className="text-xl font-black text-slate-900">{copy.title}</h2>
+          <p className="mt-1 text-sm font-semibold text-slate-400">{copy.subtitle}</p>
+        </div>
+      </div>
+
+      {isTransactionTrend ? (
+        <TransactionTrendChart {...sharedProps} />
+      ) : (
+        <ByClientSegmentChart {...sharedProps} />
+      )}
+
+      <div className="mt-6 flex flex-wrap items-center justify-center gap-x-6 gap-y-3">
+        {metricChart.series.map((series) => (
+          <div key={series.key} className="flex items-center gap-2">
+            <span
+              className={series.kind === 'line' ? 'h-[3px] w-5 rounded-full' : 'h-3 w-3 rounded-full'}
+              style={{ backgroundColor: series.color }}
+            />
+            <span className="text-xs font-bold text-slate-500">{series.name}</span>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 };
 
@@ -577,6 +928,7 @@ const BreakdownChartCard: React.FC<{
 };
 
 const ProductBreakdownPage: React.FC<ProductBreakdownPageProps> = ({ config, productKey, onBack }) => {
+  const [metricMode, setMetricMode] = useState<ChartValueTab>('transactionValue');
   const [filterMode, setFilterMode] = useState<FilterMode>('monthly');
   const [filterState, setFilterState] = useState<FilterState>(createDefaultFilterState);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
@@ -750,6 +1102,10 @@ const ProductBreakdownPage: React.FC<ProductBreakdownPageProps> = ({ config, pro
           </button>
           <h1 className="text-3xl font-black tracking-tight text-slate-900">{config.title}</h1>
           <p className="mt-2 text-sm font-semibold text-slate-400">{pageSubtitle}</p>
+          <div className="mt-5 flex flex-wrap items-center gap-3">
+            <span className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-slate-400">Metric View</span>
+            <ChartTabToggle tabs={VALUE_TABS} activeTab={metricMode} onChange={setMetricMode} />
+          </div>
         </div>
 
         <div ref={filterRef} className="relative">
@@ -962,9 +1318,21 @@ const ProductBreakdownPage: React.FC<ProductBreakdownPageProps> = ({ config, pro
       </header>
 
       <div className="space-y-6">
-        {resolvedCharts.map(({ chart, data, granularity }) => (
-          <BreakdownChartCard key={chart.title} chart={chart} data={data} granularity={granularity} />
-        ))}
+        {resolvedCharts.map(({ chart, data, granularity }) =>
+          chart.valueDatasets ? (
+            <MetricBreakdownChartCard
+              key={chart.title}
+              chart={chart}
+              activeTab={metricMode}
+              product={PRODUCT_ROUTE_NAMES[productKey]}
+              timePeriod={`${filterMode}:${filterSummary}`}
+              filterMode={filterMode}
+              filterState={filterState}
+            />
+          ) : (
+            <BreakdownChartCard key={chart.title} chart={chart} data={data} granularity={granularity} />
+          ),
+        )}
       </div>
     </div>
   );

@@ -9,9 +9,7 @@ import {
     TrendComposedChart,
     formatCurrency, 
     formatNumber,
-    SectionTitle,
-    DateRangeSelector,
-    DateSelection
+    SectionTitle
 } from '../components/Shared';
 
 interface DetailFixedIncomeProps {
@@ -199,9 +197,6 @@ const DetailFixedIncome: React.FC<DetailFixedIncomeProps> = ({ onSalespersonClic
     const selectedVolumeBreakdown = useMemo(() => scaleBreakdownData(volumeBreakdown, selectedProfile.trendScale), [selectedProfile.trendScale]);
     const leaderboardData = useMemo(() => buildLeaderboardData(selectedAudience), [selectedAudience]);
 
-    const [startDate, setStartDate] = useState<DateSelection>({ month: 'Jan', year: '2026' });
-    const [endDate, setEndDate] = useState<DateSelection>({ month: 'Jun', year: '2026' });
-
     return (
         <div className="p-4 sm:p-6 md:p-8 space-y-8">
             <header className="mb-4">
@@ -293,14 +288,6 @@ const DetailFixedIncome: React.FC<DetailFixedIncomeProps> = ({ onSalespersonClic
                 columns={["Ranking", "Salesperson", "Volume (Total)", "Volume (Offline)", "Volume (Online)", "Total Revenue (Combined Online and Offline)"]} 
                 data={leaderboardData} 
                 onRowClick={(row) => onSalespersonClick(row[1] as string)}
-                headerAction={
-                  <DateRangeSelector 
-                    start={startDate} 
-                    end={endDate} 
-                    onStartChange={setStartDate} 
-                    onEndChange={setEndDate} 
-                  />
-                }
               />
             )}
         </div>
