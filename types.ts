@@ -37,6 +37,7 @@ export enum View {
   OnboardingSLATrend,
   CustomerOnboarding,
   OnboardingOverviewV2,
+  IFrameTest,
 }
 
 export interface WidgetData {
