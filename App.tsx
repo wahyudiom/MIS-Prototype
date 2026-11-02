@@ -33,6 +33,7 @@ import OnboardingCompletionRate from './pages/OnboardingCompletionRate';
 import OnboardingOverview from './pages/OnboardingOverview';
 import OnboardingOverviewV2 from './pages/OnboardingOverviewV2';
 import CustomerOnboarding from './pages/CustomerOnboarding';
+import IFrameTest from './pages/IFrameTest';
 import { 
   ArrowLeftIcon, 
   HomeIcon, 
@@ -91,6 +92,7 @@ const viewPaths: Partial<Record<View, string>> = {
     [View.OnboardingCustomerFunnel]: '/onboarding-process/customer-funnel',
     [View.OnboardingSLATrend]: '/onboarding-process/sla-trend',
     [View.CustomerOnboarding]: '/customer-onboarding',
+    [View.IFrameTest]: '/iframe-test',
 };
 
 const viewFromPath = (pathname: string): View | undefined => {
@@ -146,6 +148,8 @@ const viewFromPath = (pathname: string): View | undefined => {
             return View.OnboardingSLATrend;
         case '/customer-onboarding':
             return View.CustomerOnboarding;
+        case '/iframe-test':
+            return View.IFrameTest;
         default:
             return undefined;
     }
@@ -253,6 +257,7 @@ const App: React.FC = () => {
             case View.OnboardingCustomerFunnel: return 'Customer Funnel';
             case View.OnboardingSLATrend: return 'SLA Trend';
             case View.CustomerOnboarding: return 'Regular Customer Onboarding';
+            case View.IFrameTest: return 'iFrame Test';
             default: return 'MIS Panel';
         }
     };
@@ -334,6 +339,7 @@ const App: React.FC = () => {
             case View.OnboardingCustomerFunnel: return <OnboardingCustomerFunnel />;
             case View.OnboardingSLATrend: return <OnboardingSLATrend />;
             case View.CustomerOnboarding: return <CustomerOnboarding />;
+            case View.IFrameTest: return <IFrameTest />;
             default:
                 return <Dashboard setView={setView} />;
         }
@@ -595,6 +601,19 @@ const App: React.FC = () => {
                           </div>
                         </div>
 
+                        {/* Standalone prototype: iFrame Test */}
+                        <div className="space-y-1">
+                          <button
+                            type="button"
+                            title={isSidebarCollapsed ? 'iFrame Test' : undefined}
+                            aria-current={view === View.IFrameTest ? 'page' : undefined}
+                            onClick={() => navigateTo(View.IFrameTest)}
+                            className={`w-full flex items-center space-x-3 px-4 py-2.5 rounded-xl transition-all ${view === View.IFrameTest ? 'bg-blue-50 text-blue-600' : 'text-gray-500 hover:bg-gray-50'}`}
+                          >
+                            <GlobeAltIcon className="h-5 w-5 shrink-0" />
+                            <span className="text-sm font-bold">iFrame Test</span>
+                          </button>
+                        </div>
                     </nav>
                 </div>
             </aside>
